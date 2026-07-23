@@ -225,7 +225,9 @@ class SqliteLedger:
         The result is stored unconditionally (it is deterministic, so a late
         submit is harmless), but only a lease held by ``token`` is released, so a
         revived stale leader cannot drop a new leader's lease. Passing ``token``
-        is what makes the run "exactly once" under a leader crash and revival.
+        fences the release: duplicates coalesce as long as a leader finishes
+        within its lease or keeps a heartbeat (a leader that silently overruns its
+        lease can still be run twice, as with any time-based lease).
         """
         self.put(key, result, ttl=ttl)
         with self._connect() as conn:

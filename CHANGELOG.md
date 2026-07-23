@@ -20,8 +20,10 @@ persistent, content-addressed memoization plus single-flight deduplication.
 - **Async support**: `@memoize` on an `async def` caches the awaited result (not
   the coroutine) and coalesces concurrent awaits, via `Wallet.acall`.
 - **Fencing token**: `claim` issues an owner token that `submit`, `release`, and
-  `extend` require, so a revived stale leader cannot disturb a new leader's lease
-  and the work runs once even under a leader crash.
+  `extend` require, so a revived stale leader cannot disturb a new leader's lease.
+  Combined with the lease timeout and heartbeat, duplicates coalesce as long as
+  the leader finishes within its lease or keeps a heartbeat (a leader that
+  silently overruns its lease can still be run twice, as with any time lease).
 - **`SqliteLedger`**: a single shared file with write-ahead logging, atomic reuse
   counters, and the fenced in-flight lease (`claim` / `submit` / `release`), plus
   `extend` and a `heartbeat` context manager to keep a long job's lease alive.
