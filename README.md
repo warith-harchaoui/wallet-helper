@@ -2,7 +2,7 @@
 
 [🇫🇷](https://github.com/warith-harchaoui/wallet-helper/blob/main/LISEZMOI.md) · [🇬🇧](https://github.com/warith-harchaoui/wallet-helper/blob/main/README.md)
 
-[![CI](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml) [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/warith-harchaoui/wallet-helper/blob/main/LICENSE) [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](#)
+[![CI](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml) [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/warith-harchaoui/wallet-helper/blob/main/LICENSE) [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](#) [![Local-first](https://img.shields.io/badge/privacy-local--first-2f6f5e.svg)](#the-promise)
 
 ![wallet-helper Logo](assets/logo.png)
 
@@ -146,6 +146,30 @@ make           # lint then test
 ```
 
 CI runs the same gate on a Python 3.10 to 3.13 matrix (Linux, plus macOS and Windows on the newest version).
+
+## The Promise
+
+wallet-helper is part of a local-first, sovereignty-minded suite, and like
+os-helper it is a small toolbox rather than a service. Rather than market that,
+here is the honest, case-by-case reality:
+
+1. **Guaranteed local.** The default `Ledger` (a folder of JSON files) and the
+   `SqliteLedger` (one file) live under `$WALLET_HELPER_DIR`, or
+   `~/.cache/wallet-helper` — on your machine. Nothing is uploaded, there is no
+   telemetry, and there is no account. Your cached results, and the inputs that
+   key them, never leave the disk.
+
+2. **Not possible to be local — the caveat.** wallet-helper exists to *avoid*
+   running your heavy call; it makes no network requests of its own. The one
+   exception is by design: the optional `[api]` dedup server and `RemoteLedger`
+   speak HTTP so a fleet can share one dedup point — and they talk only to the
+   endpoint you point them at.
+
+3. **Your decision.** wallet-helper stores whatever your function returns; if
+   that function calls a paid cloud API, that is your code's choice, never
+   wallet-helper's. Point `RemoteLedger` at your own host and the shared store
+   stays sovereign; point it at a third party and that too is your call — never
+   a default.
 
 ## Author
 

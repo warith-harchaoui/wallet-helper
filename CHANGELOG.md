@@ -55,7 +55,17 @@ persistent, content-addressed memoization plus single-flight deduplication.
 ### Removed
 - The cost, currency, and budget model (`Cost`, `Budget`, `BudgetExceeded`, and
   all `cost=` / `currency=` arguments).
-- The GUI and the MCP tool set.
+- The GUI and the MCP tool set. wallet-helper is a small toolbox, close in
+  spirit to os-helper: a library plus two CLIs and an optional HTTP dedup
+  server, with no agent surface.
+
+### Documentation
+- A **The Promise** / **La promesse** section and a `local-first` badge in the
+  README and LISEZMOI, stating the honest, case-by-case privacy reality
+  (guaranteed-local store; the optional dedup server as the one by-design
+  network path; a cloud store as your own decision), mirroring the suite.
+- Default branch renamed to `main` for consistency with the rest of the AI
+  Helpers suite (the in-repo `blob/main` documentation links now resolve).
 
 ## [0.1.0] - 2026-07-22
 
