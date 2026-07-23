@@ -60,6 +60,7 @@ class SqliteLedger:
                 "  key TEXT PRIMARY KEY,"
                 "  result TEXT NOT NULL,"      # the result, stored as JSON
                 "  created_at REAL NOT NULL,"
+                "  expires_at REAL,"           # NULL means the entry never expires
                 "  hits INTEGER NOT NULL DEFAULT 0"
                 ")"
             )
@@ -91,24 +92,31 @@ class SqliteLedger:
         """Return the full stored record, or ``None`` if absent."""
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT key, result, created_at, hits FROM entries WHERE key = ?", (key,)
+                "SELECT key, result, created_at, expires_at, hits FROM entries WHERE key = ?", (key,)
             ).fetchone()
         if row is None:
             return None
-        return {"key": row[0], "result": json.loads(row[1]), "created_at": row[2], "hits": row[3]}
+        return {"key": row[0], "result": json.loads(row[1]), "created_at": row[2], "expires_at": row[3], "hits": row[4]}
 
     def get(self, key: str) -> Any | None:
         """Return just the stored result for ``key``, or ``None`` if absent."""
         record = self.get_record(key)
         return None if record is None else record["result"]
 
-    def put(self, key: str, result: Any) -> None:
-        """Store ``result`` for ``key`` (overwrites, resetting the hit counter)."""
+    def put(self, key: str, result: Any, *, ttl: float | None = None) -> None:
+        """Store ``result`` for ``key`` (overwrites, resetting the hit counter).
+
+        With ``ttl`` set, the entry expires that many seconds from now and is then
+        treated as a miss on the next :meth:`claim` and removed by :meth:`evict`.
+        """
+        now = time.time()
+        expires_at = now + ttl if ttl is not None else None
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO entries (key, result, created_at, hits) VALUES (?, ?, ?, 0) "
-                "ON CONFLICT(key) DO UPDATE SET result=excluded.result, created_at=excluded.created_at, hits=0",
-                (key, json.dumps(result, ensure_ascii=False), time.time()),
+                "INSERT INTO entries (key, result, created_at, expires_at, hits) VALUES (?, ?, ?, ?, 0) "
+                "ON CONFLICT(key) DO UPDATE SET result=excluded.result, created_at=excluded.created_at, "
+                "expires_at=excluded.expires_at, hits=0",
+                (key, json.dumps(result, ensure_ascii=False), now, expires_at),
             )
 
     def register_hit(self, key: str) -> None:

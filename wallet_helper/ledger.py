@@ -55,8 +55,8 @@ class LedgerLike(Protocol):
         """Return the full stored record, or ``None`` if absent."""
         ...
 
-    def put(self, key: str, result: Any) -> None:
-        """Store ``result`` for ``key`` (overwrites any previous entry)."""
+    def put(self, key: str, result: Any, *, ttl: float | None = None) -> None:
+        """Store ``result`` for ``key`` (overwrites), expiring after ``ttl`` seconds."""
         ...
 
     def register_hit(self, key: str) -> None:
@@ -69,6 +69,10 @@ class LedgerLike(Protocol):
 
     def clear(self, namespace: str | None = None) -> None:
         """Remove entries, all of them or just one namespace (irreversible)."""
+        ...
+
+    def evict(self, *, max_entries: int | None = None, older_than: float | None = None) -> int:
+        """Prune entries and return how many were removed (see :meth:`Ledger.evict`)."""
         ...
 
 
@@ -97,6 +101,28 @@ def _digest(payload: Any) -> str:
         return osh.hashfile(str(payload))
     # Everything else: canonical JSON, order-independent and enum-tolerant.
     return osh.hash_string(json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False))
+
+
+def is_fresh(record: dict, *, now: float | None = None) -> bool:
+    """Return ``True`` if a record has not expired.
+
+    Parameters
+    ----------
+    record : dict
+        A stored record, which may carry an ``expires_at`` timestamp.
+    now : float, optional
+        The current time; defaults to :func:`time.time`. Passing it lets a caller
+        judge many records against one instant.
+
+    Returns
+    -------
+    bool
+        ``True`` when there is no expiry, or the expiry is still in the future.
+    """
+    expires_at = record.get("expires_at")
+    if expires_at is None:
+        return True
+    return (now if now is not None else time.time()) < expires_at
 
 
 def make_key(namespace: str, payload: Any) -> str:
@@ -168,13 +194,27 @@ class Ledger:
         record = self.get_record(key)
         return None if record is None else record["result"]
 
-    def put(self, key: str, result: Any) -> None:
-        """Store ``result`` for ``key`` (overwrites any previous entry)."""
+    def put(self, key: str, result: Any, *, ttl: float | None = None) -> None:
+        """Store ``result`` for ``key`` (overwrites any previous entry).
+
+        Parameters
+        ----------
+        key : str
+            The ledger key (see :func:`make_key`).
+        result : Any
+            The JSON-serialisable result to store.
+        ttl : float, optional
+            Seconds until the entry is considered stale. ``None`` (default) means
+            it never expires. A stale entry is treated as a miss on the next call
+            and is removed by :meth:`evict`.
+        """
         osh.make_directory(str(self.dir))
+        now = time.time()
         record = {
             "key": key,
             "result": result,
-            "created_at": time.time(),
+            "created_at": now,
+            "expires_at": now + ttl if ttl is not None else None,
             "hits": 0,  # incremented every time the cached result is reused
         }
         self._path(key).write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -222,3 +262,42 @@ class Ledger:
             entries += 1
             hits += int(record.get("hits", 0))
         return {"entries": entries, "hits": hits}
+
+    def evict(self, *, max_entries: int | None = None, older_than: float | None = None) -> int:
+        """Prune entries and return how many were removed.
+
+        Expired entries (past their ``ttl``) are always removed. In addition:
+
+        Parameters
+        ----------
+        max_entries : int, optional
+            Keep only the newest ``max_entries`` by creation time; remove the
+            rest. This is a simple size cap.
+        older_than : float, optional
+            Remove entries created more than this many seconds ago.
+
+        Returns
+        -------
+        int
+            The number of entries removed.
+        """
+        now = time.time()
+        # Read every entry once, with its creation time, so we can rank and prune.
+        items = []
+        for path in self.dir.glob("*.json"):
+            record = json.loads(path.read_text(encoding="utf-8"))
+            items.append((path, float(record.get("created_at", 0.0)), record))
+
+        doomed: set[Path] = set()
+        for path, created_at, record in items:
+            if not is_fresh(record, now=now):
+                doomed.add(path)  # expired entries always go
+            elif older_than is not None and (now - created_at) > older_than:
+                doomed.add(path)
+        if max_entries is not None:
+            survivors = sorted((it for it in items if it[0] not in doomed), key=lambda it: it[1], reverse=True)
+            for path, _created_at, _record in survivors[max_entries:]:
+                doomed.add(path)  # keep the newest max_entries, drop the older tail
+
+        osh.remove_files([str(p) for p in doomed])
+        return len(doomed)
