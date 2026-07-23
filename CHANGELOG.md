@@ -4,35 +4,37 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
-## [Unreleased]
+## [0.2.0] - 2026-07-23
+
+This release refocuses wallet-helper on one job: never run the same heavy call
+twice. The cost, currency, and budget features were removed; the project is now
+persistent, content-addressed memoization plus single-flight deduplication.
 
 ### Added
-- **click CLI** variant (`wallet-helper-click` / `python -m wallet_helper.cli_click`),
-  feature-equivalent to the argparse CLI (the `[cli]` extra).
-- **FastAPI HTTP surface** (`wallet_helper.api`, the `[api]` extra): key
-  derivation, record store/lookup, hit counting, stats and budget checks over
-  HTTP — a shared ledger for several processes — plus a minimal dashboard at
-  `/gui`. Exposes only the accounting half (never runs your paid callable).
-- **MCP tool set** (`wallet_helper.mcp_server` / `wallet-helper-mcp`, the `[mcp]`
-  extra): the same accounting operations as Model Context Protocol tools.
-- `EXAMPLES.md` runnable cookbook; `requirements.txt` (runtime) split from
-  `requirements-dev.txt`; `Makefile` (`install`/`fmt`/`lint`/`test`) and a
-  GitHub Actions CI matrix (ruff + pytest, Python 3.10–3.13, Linux/macOS/Windows).
-- Cross-platform install notes and a Contributing section in README / LISEZMOI.
+- **Single-flight**: two identical calls made at the same time collapse into
+  one. In-process coalescing is built into `Wallet`; cross-process coalescing
+  uses the SQLite backend's `claim` / `submit` / `release` lease.
+- **`SqliteLedger`**: a single shared file with write-ahead logging, atomic reuse
+  counters, and the in-flight lease.
+- **`@memoize`** decorator with a shared default store, plus `ignore=` to drop a
+  volatile argument, and `cache_info()` / `cache_clear()` on the wrapped function.
+- **HTTP dedup server** (`wallet_helper.api`, the `[api]` extra): `claim`,
+  `submit`, `release`, and a long-polling `GET /result/{key}?wait=` so many
+  clients share one dedup point.
+- `LANDSCAPE.md` comparing related caching, single-flight, and idempotency tools.
 
 ### Changed
-- Docstring examples now run as doctests in the default `pytest` invocation
-  (`--doctest-modules`). Test suite: 39 tests + doctests, ruff-clean.
+- Built on [os-helper](https://github.com/warith-harchaoui/os-helper) for
+  content-addressed hashing, temporary folders, path helpers, and logging.
+- `Ledger.stats()` now reports `{entries, hits}` (results cached and calls saved).
 
-## [0.1.0] — 2026-07-22
+### Removed
+- The cost, currency, and budget model (`Cost`, `Budget`, `BudgetExceeded`, and
+  all `cost=` / `currency=` arguments).
+- The GUI and the MCP tool set.
+
+## [0.1.0] - 2026-07-22
 
 ### Added
-- Core library: content-addressed `Ledger` (idempotency cache), `Cost` / `Budget`
-  value types with over-budget refusal, and `Wallet` (the `call` method +
-  `@paid` decorator) tying them together — a provider-agnostic guard so a paid
-  call runs, and bills, at most once per (namespace, content, params).
-- `Ledger.stats()` reporting spend and cache savings per currency.
-- argparse CLI (`wallet-helper` / `python -m wallet_helper.cli_argparse`):
-  `stats`, `path`, `clear`.
-- Zero runtime dependencies (stdlib only). Bilingual README / LISEZMOI with a
-  "prior art" comparison. Test suite: 17 tests + doctests, ruff-clean.
+- Content-addressed `Ledger` for idempotent results, and a `Wallet` front door.
+- argparse CLI: `stats`, `path`, `clear`.

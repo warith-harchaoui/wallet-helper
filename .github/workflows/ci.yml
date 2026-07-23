@@ -4,7 +4,7 @@
 # surprised by CI:
 #   - lint: ruff check (PEP 8 + import order enforced automatically).
 #   - test: pytest across the supported Python matrix, with the optional
-#     surfaces (click / fastapi / mcp) installed so every surface is exercised.
+#     surfaces (click / fastapi) installed so every surface is exercised.
 name: ci
 
 on:
@@ -45,6 +45,6 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install package + dev/optional extras
-        run: python -m pip install -e ".[dev,cli,api,mcp]"
+        run: python -m pip install -e ".[dev,cli,api]"
       - name: Run tests
         run: python -m pytest -q

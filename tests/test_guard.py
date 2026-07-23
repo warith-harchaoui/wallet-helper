@@ -1,16 +1,16 @@
-"""Wallet — idempotent calls, budget enforcement, the @paid decorator.
+"""Wallet: memoization, the failure path, and concurrent single-flight.
 
 Author
 ------
-Warith HARCHAOUI — https://linkedin.com/in/warith-harchaoui
+Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
 
-from wallet_helper.cost import Budget, BudgetExceeded
 from wallet_helper.guard import Wallet
 from wallet_helper.ledger import Ledger
 
@@ -20,66 +20,64 @@ def wallet(tmp_path: Path) -> Wallet:
     return Wallet(Ledger(tmp_path))
 
 
-def test_second_identical_call_is_not_billed(wallet: Wallet) -> None:
-    runs = {"n": 0}
+def test_second_identical_call_reuses_the_result(wallet: Wallet) -> None:
+    runs = 0
 
-    def paid_call() -> dict:
-        runs["n"] += 1
+    def heavy() -> dict:
+        nonlocal runs
+        runs += 1
         return {"text": "hello"}
 
-    r1, hit1 = wallet.call("demo", {"file": "a.wav"}, paid_call, cost=0.75)
-    r2, hit2 = wallet.call("demo", {"file": "a.wav"}, paid_call, cost=0.75)
+    r1, hit1 = wallet.call("demo", {"file": "a.wav"}, heavy)
+    r2, hit2 = wallet.call("demo", {"file": "a.wav"}, heavy)
     assert (r1, hit1) == ({"text": "hello"}, False)
     assert (r2, hit2) == ({"text": "hello"}, True)
-    assert runs["n"] == 1  # the paid call ran once
+    assert runs == 1  # the heavy call ran once
 
 
-def test_budget_blocks_miss_before_calling(tmp_path: Path) -> None:
-    w = Wallet(Ledger(tmp_path), budget=Budget(1.0, "EUR", spent=0.8))
-    ran = {"n": 0}
+def test_failure_is_not_cached(wallet: Wallet) -> None:
+    calls = 0
 
-    def paid_call() -> dict:
-        ran["n"] += 1
-        return {}
+    def flaky() -> str:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError("boom")
 
-    with pytest.raises(BudgetExceeded):
-        w.call("demo", {"x": 1}, paid_call, cost=0.5, currency="EUR")
-    assert ran["n"] == 0  # refused before spending
-
-
-def test_cache_hit_does_not_touch_budget(tmp_path: Path) -> None:
-    # First call spends; a repeat is served from cache and must NOT charge again.
-    w = Wallet(Ledger(tmp_path), budget=Budget(1.0, "EUR"))
-    w.call("demo", {"x": 1}, lambda: {"ok": True}, cost=0.6, currency="EUR")
-    assert round(w.budget.spent, 2) == 0.6
-    _, hit = w.call("demo", {"x": 1}, lambda: {"ok": True}, cost=0.6, currency="EUR")
-    assert hit is True and round(w.budget.spent, 2) == 0.6  # unchanged
+    with pytest.raises(RuntimeError):
+        wallet.call("demo", {"x": 1}, flaky)
+    with pytest.raises(RuntimeError):
+        wallet.call("demo", {"x": 1}, flaky)  # not cached, so it runs again
+    assert calls == 2
 
 
-def test_paid_decorator_dedups(wallet: Wallet) -> None:
-    calls = {"n": 0}
+def test_concurrent_identical_calls_run_once(wallet: Wallet) -> None:
+    # Two threads start the same slow call at once; single-flight must run it once
+    # and hand the second thread the first thread's result.
+    runs = 0
+    started = threading.Event()
+    release = threading.Event()
 
-    @wallet.paid("square", cost=0.01)
-    def square(n: int) -> int:
-        calls["n"] += 1
-        return n * n
+    def slow() -> str:
+        nonlocal runs
+        runs += 1
+        started.set()
+        release.wait(timeout=5)  # hold the leader so the follower arrives mid-flight
+        return "value"
 
-    assert square(9) == 81
-    assert square(9) == 81  # cached
-    assert square(10) == 100  # different args → real call
-    assert calls["n"] == 2
+    results: list[tuple] = []
 
+    def worker() -> None:
+        results.append(wallet.call("demo", {"x": 1}, slow))
 
-def test_paid_decorator_custom_key_ignores_volatile_arg(wallet: Wallet) -> None:
-    # Only `n` should determine the result; a changing `client` handle must not
-    # bust the cache.
-    calls = {"n": 0}
+    leader = threading.Thread(target=worker)
+    leader.start()
+    started.wait(timeout=5)          # ensure the leader is inside slow()
+    follower = threading.Thread(target=worker)
+    follower.start()
+    release.set()                    # let the leader finish
+    leader.join(timeout=5)
+    follower.join(timeout=5)
 
-    @wallet.paid("f", cost=0.01, key=lambda n, client: {"n": n})
-    def f(n: int, client: object) -> int:
-        calls["n"] += 1
-        return n + 1
-
-    assert f(1, client=object()) == 2
-    assert f(1, client=object()) == 2  # different client, same key → cached
-    assert calls["n"] == 1
+    assert runs == 1                                    # ran exactly once
+    assert {r[0] for r in results} == {"value"}         # both got the value
+    assert sorted(r[1] for r in results) == [False, True]  # one leader, one follower

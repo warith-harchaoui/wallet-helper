@@ -1,8 +1,8 @@
-# wallet-helper — shift-left developer commands (gist rule 18).
+# wallet-helper developer commands.
 #
-# The same deterministic checks CI runs, runnable on a contributor's machine in
-# one word. Run `make` (or `make all`) before pushing: format, lint, test — the
-# exact gate CI enforces, so failures surface locally, not in a PR.
+# The same checks CI runs, in one word on a contributor's machine. Run `make`
+# (or `make all`) before pushing: lint then test, the exact gate CI enforces, so
+# failures show up locally rather than in a pull request.
 #
 # Targets:
 #   make install   editable install with dev + all optional extras
@@ -15,7 +15,7 @@
 .PHONY: install fmt lint test all
 
 install:
-	python -m pip install -e ".[dev,cli,api,mcp]"
+	python -m pip install -e ".[dev,cli,api]"
 
 fmt:
 	ruff check --fix .

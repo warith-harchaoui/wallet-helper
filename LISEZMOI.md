@@ -2,177 +2,127 @@
 
 [🇫🇷](https://github.com/warith-harchaoui/wallet-helper/blob/main/LISEZMOI.md) · [🇬🇧](https://github.com/warith-harchaoui/wallet-helper/blob/main/README.md)
 
-[![CI](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml) [![Licence : BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/warith-harchaoui/wallet-helper/blob/main/LICENSE) [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](#) [![Sans dépendance](https://img.shields.io/badge/deps-zéro%20(stdlib)-2f6f5e.svg)](#la-promesse)
+[![CI](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml) [![Licence : BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/warith-harchaoui/wallet-helper/blob/main/LICENSE) [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](#)
 
 ![wallet-helper Logo](assets/logo.png)
 
 `wallet-helper` fait partie d'une collection de bibliothèques nommée **AI Helpers**, développée pour construire de l'intelligence artificielle.
 
-**Ne jamais payer deux fois le même appel facturé.** Un garde-fou minimal, local-first et agnostique du fournisseur, autour de n'importe quel appel qui coûte quelque chose — une API HTTP, un binaire payant, une fonction facturée — dans n'importe quelle devise : argent, temps, énergie, eau, CO₂. Il combine l'idempotence (un registre content-addressed renvoie le résultat conservé au lieu de relancer l'appel), la comptabilité de dépense (chaque appel réel enregistre son coût) et le contrôle de budget (un plafond optionnel refuse un appel qui dépasserait la limite, *avant* qu'il ne s'exécute) — trois choses habituellement séparées, avec **zéro dépendance runtime** pour s'intégrer à n'importe quel projet.
+Ne jamais relancer deux fois le même appel coûteux. wallet-helper est une mémoïsation persistante pour les appels coûteux (une requête d'API payante, un modèle lent, n'importe quelle fonction lourde) : un appel identique est servi depuis un stockage local au lieu d'être relancé, y compris après un redémarrage. Quand deux appels identiques démarrent en même temps, ils fusionnent : le second attend le résultat du premier et le réutilise au lieu de tourner en parallèle (single-flight).
 
 Par [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui)
 
 ## Documentation
 
-[💻 Documentation](https://harchaoui.org/warith/ai-helpers/docs/wallet-helper-doc/)
-
 [📋 Exemples](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md)
 
-## La promesse
+[🔭 Paysage](https://github.com/warith-harchaoui/wallet-helper/blob/main/LANDSCAPE.md)
 
-> **Le même appel facturé s'exécute, et se facture, au plus une fois.** Aucun
-> compte cloud, aucun framework, aucune dépendance — le garde-fou vit dans votre
-> processus et le registre est un dossier de fichiers JSON sur votre disque.
+## Ce que ça fait
 
-Ce n'est pas un *tableau de bord* de coûts auquel vous envoyez votre trafic.
-C'est une *propriété* locale : un appel identique (même namespace, même contenu,
-mêmes paramètres) est servi depuis un registre content-addressed au lieu d'être
-relancé, donc vous ne le payez jamais deux fois — et un budget optionnel refuse
-l'appel qui dépasserait la limite avant que le moindre centime ne parte.
-Agnostique du fournisseur et de la devise : `"USD"`, `"EUR"`, ou même
-`"tokens"` / `"CO2"` fonctionnent.
+Un appel lourd, on ne veut pas le payer deux fois. Deux causes de double exécution :
 
-## État — v0.1.0
+1. Vous le rappelez la semaine suivante. wallet-helper stocke chaque résultat sur disque, adressé par contenu à partir d'un namespace et des entrées (arguments, contenu d'un fichier, ou octets), donc la répétition est servie depuis le stockage plutôt que recalculée.
+2. Vous le lancez deux fois en même temps. Deux threads, ou deux processus, démarrent le même appel lent avant que l'un ne finisse. wallet-helper laisse l'un l'exécuter et fait attendre les autres pour ce résultat, donc le travail n'a lieu qu'une fois.
+
+C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouche et deux entrées différentes n'entrent jamais en collision. Le stockage par défaut est un dossier de fichiers JSON, simple à lire et à supprimer. Un backend SQLite ajoute un stockage partagé et sûr en concurrence, plus le single-flight entre processus. Un petit serveur HTTP centralise cette déduplication pour plusieurs clients.
+
+## État
 
 Ce qui est livré aujourd'hui :
 
-- **bibliothèque** — `Ledger` content-addressed (cache d'idempotence), types valeur `Cost` / `Budget`, et `Wallet` (la méthode `call` + le décorateur `@paid`) qui les relient. Stdlib uniquement.
-- **`wallet-helper` / `cli_argparse`** — CLI sans dépendance : `stats`, `path`, `clear`.
-- **`wallet-helper-click`** — CLI équivalente sur `click` (l'extra `[cli]`).
-- **Surface FastAPI + `/gui`** — un registre partagé en HTTP avec un tableau de bord minimal (l'extra `[api]`).
-- **`wallet-helper-mcp`** — les mêmes opérations de comptabilité en outils Model Context Protocol (l'extra `[mcp]`).
+- **bibliothèque** avec `Wallet` et le décorateur `@memoize`, sur un `Ledger` (fichiers JSON) ou un `SqliteLedger` (un fichier partagé). Le single-flight en processus est intégré.
+- **single-flight entre processus** via le bail (claim, submit, release) du backend SQLite.
+- **`wallet-helper` / `cli_argparse`** et **`wallet-helper-click`** : inspecter et vider le stockage.
+- **serveur HTTP de déduplication** (l'extra `[api]`) : claim, submit, et attente longue d'un résultat pour plusieurs clients.
 
 ## Installation
 
-**Prérequis** — le seul requis est **Python 3.10–3.13** ; le cœur est en
-bibliothèque standard pure, donc aucun paquet système à installer. Pour
-installer Python lui-même, multiplateforme :
+Le seul prérequis est **Python 3.10 à 3.13**. Pour installer Python :
 
 - 🍎 **macOS** ([Homebrew](https://brew.sh)) : `brew install python`
-  (installez `brew` grâce à [brew.sh](https://brew.sh/))
 - 🐧 **Ubuntu/Debian** : `sudo apt update && sudo apt install -y python3 python3-pip`
 - 🪟 **Windows** (PowerShell) : `winget install Python.Python.3.12`
-
-### Depuis les sources
 
 Installez depuis GitHub, épinglé au tag de version :
 
 ```bash
-pip install "git+https://github.com/warith-harchaoui/wallet-helper.git@v0.1.0"
+pip install "git+https://github.com/warith-harchaoui/wallet-helper.git@v0.2.0"
 ```
 
-Extras optionnels — chaque surface au-delà du cœur est opt-in, le cœur reste
-sans dépendance (au choix) :
+Les surfaces ligne de commande et HTTP sont des extras optionnels :
 
 ```bash
-pip install "wallet-helper[cli] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.1.0"   # variante CLI click            -> click
-pip install "wallet-helper[api] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.1.0"   # surface HTTP FastAPI + /gui    -> fastapi, uvicorn
-pip install "wallet-helper[mcp] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.1.0"   # jeu d'outils MCP               -> mcp
+pip install "wallet-helper[cli] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.2.0"   # variante CLI click    -> click
+pip install "wallet-helper[api] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.2.0"   # serveur HTTP de dédup -> fastapi, uvicorn
 ```
 
 ## Prise en main
 
-En bibliothèque :
+Mémoïsez n'importe quelle fonction en une ligne. Le résultat est stocké sur disque et réutilisé au prochain appel identique, cette exécution ou la semaine prochaine :
 
 ```python
-from wallet_helper import Wallet, Ledger, Budget
+from wallet_helper import memoize
 
-wallet = Wallet(Ledger("~/.cache/mon-app"), budget=Budget(10.0, "EUR"))
+@memoize
+def transcribe(path):
+    return call_some_paid_api(path)   # lent et facturé ; s'exécute au plus une fois par fichier
 
-# Enrobe n'importe quel appel payant. Le 2e appel identique est gratuit (servi
-# depuis le registre) et ne touche pas au budget.
-result, from_cache = wallet.call(
-    "gladia",                                    # namespace (fournisseur / endpoint)
-    {"file": "appel.wav", "diarization": True},  # ce qui détermine le résultat
-    lambda: call_gladia("appel.wav"),            # le travail payant (au plus une fois)
-    cost=0.75, currency="EUR",
-)
-
-# Ou en décorateur — les appels identiques renvoient le résultat en cache :
-@wallet.paid("openai.chat", cost=0.02, currency="USD")
-def resume(texte: str) -> str:
-    return openai_chat(texte)
+transcribe("reunion.wav")   # s'exécute, stocke le résultat
+transcribe("reunion.wav")   # servi depuis le stockage, pas de second appel
 ```
 
-Le payload est **content-addressed** : passer un chemin de fichier ou des
-`bytes` — renommer le fichier hit quand même ; deux fichiers différents ne
-collisionnent jamais. Les paramètres sont hashés aussi (`diarization=True` ≠
-`False`).
+Ignorez un argument qui ne devrait pas changer le résultat, par exemple un handle client :
 
-Deux CLI interchangeables inspectent et gèrent le registre (par défaut sous
-`$WALLET_HELPER_DIR` puis `~/.cache/wallet-helper`, un fichier JSON par entrée) :
+```python
+@memoize(ignore=("client",))
+def fetch(doc_id, client):
+    return client.get(doc_id)
+```
+
+Inspectez ou videz le cache d'une fonction, comme `functools.lru_cache` :
+
+```python
+transcribe.cache_info()    # {'entries': 1, 'hits': 1}
+transcribe.cache_clear()   # oublier les résultats stockés de cette fonction
+```
+
+Deux outils en ligne de commande inspectent et gèrent le stockage (par défaut `$WALLET_HELPER_DIR`, puis `~/.cache/wallet-helper`) :
 
 ```bash
-python -m wallet_helper.cli_argparse stats   # dépense + économies du cache par devise
-python -m wallet_helper.cli_argparse path    # où vit le registre
-python -m wallet_helper.cli_argparse clear   # vide le registre
+python -m wallet_helper.cli_argparse stats   # combien de résultats en cache et combien d'appels évités
+python -m wallet_helper.cli_argparse path    # où vit le stockage
+python -m wallet_helper.cli_argparse clear    # vider le stockage
 
 wallet-helper-click stats                     # idem, via la variante click
 ```
 
-En API HTTP ou serveur MCP (aligné sur le reste de la suite `*-helper`) :
+Pour un stockage partagé et le single-flight entre processus, utilisez le backend SQLite ou le serveur HTTP. Voir [EXAMPLES.md](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md).
 
-```bash
-pip install -e ".[api,mcp]"
+## Construit sur os-helper
 
-# FastAPI : registre partagé en HTTP + tableau de bord /gui — docs OpenAPI /docs
-uvicorn wallet_helper.api:app                 # http://127.0.0.1:8000/gui
-
-# MCP : expose les mêmes outils de comptabilité à un client MCP
-wallet-helper-mcp                             # ou : python -m wallet_helper.mcp_server
-```
-
-Les deux surfaces n'exposent que la moitié *comptable* (dérivation de clé,
-enregistrements, hits, stats, vérifications de budget). Elles n'exécutent jamais
-votre appel payant — il reste dans votre processus, donc aucune surface
-d'exécution de code à distance. Pour le catalogue complet de recettes, voir
-[📋 EXAMPLES.md](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md).
-
-## Ce qui existe déjà sur ces sujets
-
-wallet-helper occupe volontairement un creux. Les briques existent séparément ;
-c'est la **combinaison** — idempotence + registre de coût + budget, agnostique et
-local-first — qui est rare.
-
-- **Mémoïsation / cache disque général** — `functools.lru_cache` (mémoire seule),
-  `joblib.Memory`, `diskcache`. Ils dédupliquent mais **n'ont aucune notion
-  d'argent** (coût, devise, budget).
-- **Cache de réponses HTTP** — `requests-cache`, `CacheControl`, `VCR.py`. Cache
-  par requête HTTP ; là encore **pas de comptabilité ni de budget**, et HTTP-only.
-- **Coût/limites spécifiques LLM** — `litellm` (cache + suivi de dépense +
-  budgets, le cousin le plus proche, mais **LLM-only et lourd**), `tokencost`
-  (tables de prix, sans cache/garde), le cache LLM de LangChain, et
-  l'observabilité SaaS (Helicone / OpenMeter / dashboards — **distants,
-  liés à un compte, pas un garde local**).
-- **Clés d'idempotence** — style Stripe, AWS Lambda Powertools. Elles évitent les
-  **doubles effets de bord sur retry** (autre objectif), côté serveur/cloud.
-
-Si votre monde n'est que des LLM et que vous utilisez déjà `litellm`, son
-budget + cache peuvent suffire. wallet-helper est pour le reste : **n'importe
-quel** appel payant, sans framework, sans service, sans dépendance.
+wallet-helper fait partie de la suite AI Helpers et s'appuie sur [os-helper](https://github.com/warith-harchaoui/os-helper) pour le hachage adressé par contenu, les dossiers temporaires, les utilitaires de chemins et la journalisation.
 
 ## Architecture
 
-Trois préoccupations derrière une seule porte d'entrée (`Wallet`), sur un dossier
-d'entrées JSON :
-
-| Préoccupation | Composant |
+| Pièce | Rôle |
 |---|---|
-| **Idempotence** | `Ledger` — stockage content-addressed (`make_key` → sha256 du namespace + payload) |
-| **Comptabilité** | `Cost` / `Budget` — types valeur monétaires avec refus de dépassement |
-| **Garde-fou** | `Wallet` — la méthode `call` + le décorateur `@paid` qui les relient |
+| `make_key` | Hachage de contenu d'un namespace et d'un payload (arguments, contenu de fichier, ou octets). |
+| `Ledger` | Stockage par défaut : un fichier JSON par entrée. |
+| `SqliteLedger` | Un fichier SQLite partagé, compteurs de réutilisation atomiques, et le bail claim/submit/release. |
+| `Wallet` / `memoize` | Porte d'entrée : recherche, single-flight en processus, puis stockage. |
+| `wallet_helper.api` | Serveur HTTP qui centralise la déduplication pour plusieurs clients. |
 
 ## Tests
 
 ```bash
-make install   # installation éditable avec dev + tous les extras
-make lint      # ruff (PEP 8 + ordre des imports) — le gate CI
-make test      # pytest + doctests sur toutes les surfaces
-make           # lint + test (à lancer avant de pousser)
+make install   # installation éditable avec dev et tous les extras
+make lint      # ruff (PEP 8 et ordre des imports)
+make test      # pytest et doctests
+make           # lint puis test
 ```
 
-La CI applique le même gate `lint` + `test` sur une matrice Python 3.10–3.13
-(Linux, plus macOS et Windows sur la version la plus récente).
+La CI applique le même gate sur une matrice Python 3.10 à 3.13 (Linux, plus macOS et Windows sur la version la plus récente).
 
 ## Auteur
 

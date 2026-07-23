@@ -1,8 +1,8 @@
-"""Content-addressed ledger — keys, storage, hits, stats.
+"""Content-addressed ledger: keys, storage, hits, stats, namespaces.
 
 Author
 ------
-Warith HARCHAOUI — https://linkedin.com/in/warith-harchaoui
+Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
 from __future__ import annotations
 
@@ -27,28 +27,38 @@ def test_key_separates_namespaces() -> None:
 
 
 def test_key_content_addresses_a_file(tmp_path: Path) -> None:
-    f = tmp_path / "clip.raw"
-    f.write_bytes(b"same-bytes")
-    assert make_key("ns", f) == make_key("ns", b"same-bytes")  # file == its bytes
+    a = tmp_path / "clip.raw"
+    a.write_bytes(b"same-bytes")
+    b = tmp_path / "renamed.raw"
+    b.write_bytes(b"same-bytes")
+    # Same content hits after a rename; ascii bytes hash like the file holding them.
+    assert make_key("ns", a) == make_key("ns", b)
+    assert make_key("ns", a) == make_key("ns", b"same-bytes")
 
 
 def test_put_get_roundtrip_preserves_json(ledger: Ledger) -> None:
-    payload = {"utterances": [{"speaker": "0", "text": "café ☕"}], "n": [1, 2]}
-    key = make_key("gladia", {"file": "a.wav"})
-    ledger.put(key, payload, cost=0.75, currency="USD")
+    payload = {"utterances": [{"speaker": "0", "text": "cafe"}], "n": [1, 2]}
+    key = make_key("asr", {"file": "a.wav"})
+    ledger.put(key, payload)
     assert ledger.has(key) and ledger.get(key) == payload
 
 
-def test_stats_track_spend_and_savings(ledger: Ledger) -> None:
-    key = make_key("gladia", {"file": "a.wav"})
-    ledger.put(key, {"ok": True}, cost=0.75, currency="USD")
+def test_stats_count_entries_and_saved_calls(ledger: Ledger) -> None:
+    key = make_key("asr", {"file": "a.wav"})
+    ledger.put(key, {"ok": True})
     ledger.register_hit(key)
-    ledger.register_hit(key)  # reused twice → saved 2 × 0.75
+    ledger.register_hit(key)  # reused twice, so two calls were saved
     s = ledger.stats()
-    assert s["entries"] == 1 and s["hits"] == 2
-    assert round(s["spent"], 2) == 0.75
-    assert round(s["saved"], 2) == 1.50
-    assert round(s["by_currency"]["USD"]["saved"], 2) == 1.50
+    assert s == {"entries": 1, "hits": 2}
+
+
+def test_stats_and_clear_scope_to_a_namespace(ledger: Ledger) -> None:
+    ledger.put(make_key("a", {"x": 1}), 1)
+    ledger.put(make_key("b", {"x": 1}), 2)
+    assert ledger.stats("a")["entries"] == 1
+    ledger.clear("a")
+    assert ledger.stats("a")["entries"] == 0
+    assert ledger.stats("b")["entries"] == 1  # other namespace untouched
 
 
 def test_missing_key_returns_none(ledger: Ledger) -> None:

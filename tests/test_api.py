@@ -1,8 +1,8 @@
-"""FastAPI HTTP surface — round-trips against a temporary ledger. Skipped sans fastapi.
+"""HTTP dedup server: the claim, submit, result protocol. Skipped without fastapi.
 
 Author
 ------
-Warith HARCHAOUI — https://linkedin.com/in/warith-harchaoui
+Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
 from __future__ import annotations
 
@@ -10,21 +10,20 @@ from pathlib import Path
 
 import pytest
 
-# Optional surface: needs fastapi + httpx (TestClient transport). Skip cleanly
-# when either is missing so a core-only install stays green.
+# Optional surface: needs fastapi and httpx (the TestClient transport). Skip
+# cleanly when either is missing so a core install stays green.
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
 from wallet_helper.api import create_app  # noqa: E402
-from wallet_helper.ledger import Ledger  # noqa: E402
+from wallet_helper.sqlite_ledger import SqliteLedger  # noqa: E402
 
 
 @pytest.fixture()
 def client(tmp_path: Path) -> TestClient:
-    # Point the app at a temp ledger so tests never touch the real store.
-    return TestClient(create_app(Ledger(tmp_path)))
+    return TestClient(create_app(SqliteLedger(tmp_path / "ledger.db")))
 
 
 def test_health_reports_ok(client: TestClient) -> None:
@@ -32,41 +31,36 @@ def test_health_reports_ok(client: TestClient) -> None:
     assert body["status"] == "ok" and "version" in body
 
 
-def test_put_then_get_record_round_trips(client: TestClient) -> None:
-    key = client.post("/key", json={"namespace": "demo", "payload": {"x": 1}}).json()["key"]
-    put = client.put(
-        "/records",
-        json={"namespace": "demo", "payload": {"x": 1}, "result": {"ok": True}, "cost": 0.75, "currency": "EUR"},
-    ).json()
-    assert put["key"] == key  # key is derived identically both ways
-    record = client.get(f"/records/{key}").json()
-    assert record["result"] == {"ok": True} and record["cost"] == 0.75
+def test_claim_submit_result_dedups(client: TestClient) -> None:
+    call = {"namespace": "asr", "payload": {"file": "a.wav"}}
+
+    first = client.post("/claim", json=call).json()
+    assert first["status"] == "leased"           # first caller computes
+
+    second = client.post("/claim", json=call).json()
+    assert second["status"] == "pending"          # a concurrent caller waits
+
+    client.post("/submit", json={**call, "result": {"text": "hi"}})
+
+    third = client.post("/claim", json=call).json()
+    assert third["status"] == "hit" and third["result"] == {"text": "hi"}
 
 
-def test_missing_record_is_404(client: TestClient) -> None:
-    assert client.get("/records/nope").status_code == 404
+def test_result_long_poll_returns_after_submit(client: TestClient) -> None:
+    call = {"namespace": "asr", "payload": {"file": "b.wav"}}
+    key = client.post("/key", json=call).json()["key"]
+    client.post("/claim", json=call)                       # lease it
+    client.post("/submit", json={**call, "result": 42})    # store it
+    got = client.get(f"/result/{key}", params={"wait": 1.0}).json()
+    assert got["result"] == 42
 
 
-def test_hit_then_stats_shows_savings(client: TestClient) -> None:
-    client.put(
-        "/records",
-        json={"namespace": "demo", "payload": {"x": 1}, "result": 1, "cost": 0.5, "currency": "USD"},
-    )
-    key = client.post("/key", json={"namespace": "demo", "payload": {"x": 1}}).json()["key"]
-    client.post(f"/records/{key}/hit")
-    stats = client.get("/stats").json()
-    assert stats["entries"] == 1 and round(stats["saved"], 2) == 0.5
+def test_result_times_out_when_absent(client: TestClient) -> None:
+    assert client.get("/result/nope", params={"wait": 0.0}).status_code == 404
 
 
-def test_budget_check_flags_overspend(client: TestClient) -> None:
-    body = client.post(
-        "/budget/check",
-        json={"limit": 1.0, "currency": "EUR", "spent": 0.8, "cost": 0.5, "cost_currency": "EUR"},
-    ).json()
-    assert body["would_exceed"] is True and round(body["remaining"], 2) == 0.2
-
-
-def test_gui_serves_html(client: TestClient) -> None:
-    resp = client.get("/gui")
-    assert resp.status_code == 200 and "text/html" in resp.headers["content-type"]
-    assert "wallet-helper" in resp.text
+def test_stats_counts_entries(client: TestClient) -> None:
+    call = {"namespace": "asr", "payload": {"file": "c.wav"}}
+    client.post("/claim", json=call)
+    client.post("/submit", json={**call, "result": 1})
+    assert client.get("/stats").json()["entries"] == 1

@@ -1,204 +1,206 @@
-# wallet-helper — Examples
+# wallet-helper Examples
 
-A runnable cookbook of common use cases. Every Python block is self-contained
-and uses a throwaway temporary ledger so you can paste it into a REPL and watch
-it work. The library is stdlib-only, so the core examples need nothing installed
-beyond `wallet-helper` itself.
+A cookbook of common uses. Every Python block is self-contained and uses a
+temporary store, so you can paste it into a REPL and watch it work.
 
-- [1. Never pay twice (the core idea)](#1-never-pay-twice-the-core-idea)
-- [2. The `@paid` decorator](#2-the-paid-decorator)
-- [3. Enforce a budget ceiling](#3-enforce-a-budget-ceiling)
-- [4. Content-address a file (rename-proof)](#4-content-address-a-file-rename-proof)
-- [5. A custom key: ignore volatile arguments](#5-a-custom-key-ignore-volatile-arguments)
-- [6. See what you spent and saved](#6-see-what-you-spent-and-saved)
-- [7. Command line](#7-command-line)
-- [8. HTTP service + GUI (optional)](#8-http-service--gui-optional)
-- [9. MCP tool set (optional)](#9-mcp-tool-set-optional)
+- [1. Memoize a heavy call](#1-memoize-a-heavy-call)
+- [2. The decorator, with cache_info and cache_clear](#2-the-decorator-with-cache_info-and-cache_clear)
+- [3. Ignore a volatile argument](#3-ignore-a-volatile-argument)
+- [4. Content-address a file](#4-content-address-a-file)
+- [5. Single-flight across threads](#5-single-flight-across-threads)
+- [6. A shared store with SQLite](#6-a-shared-store-with-sqlite)
+- [7. Cross-process single-flight over HTTP](#7-cross-process-single-flight-over-http)
+- [8. Command line](#8-command-line)
 
-## 1. Never pay twice (the core idea)
+## 1. Memoize a heavy call
 
-Wrap any callable that costs money. The first call runs and is billed; an
-identical second call is served from the ledger for free.
+Wrap any function whose run is expensive. The first call runs it; an identical
+second call is served from the store. `from_cache` tells you which happened.
 
 ```python
-import tempfile
+import os_helper as osh
 from wallet_helper import Wallet, Ledger
 
-wallet = Wallet(Ledger(tempfile.mkdtemp()))
-calls = {"n": 0}
+with osh.temporary_folder() as tmp:
+    wallet = Wallet(Ledger(tmp))
 
-def transcribe():           # stand-in for a paid API call
-    calls["n"] += 1
-    return {"text": "hello"}
+    def transcribe(path):
+        return {"text": "hello"}   # stand-in for a slow, paid API call
 
-r1, from_cache1 = wallet.call("gladia", {"file": "a.wav"}, transcribe, cost=0.75, currency="EUR")
-r2, from_cache2 = wallet.call("gladia", {"file": "a.wav"}, transcribe, cost=0.75, currency="EUR")
+    r1, from_cache1 = wallet.call("transcribe", {"file": "a.wav"}, lambda: transcribe("a.wav"))
+    r2, from_cache2 = wallet.call("transcribe", {"file": "a.wav"}, lambda: transcribe("a.wav"))
 
-print(r1, from_cache1)      # {'text': 'hello'} False   -> ran, charged 0.75
-print(r2, from_cache2)      # {'text': 'hello'} True    -> served free from cache
-print("real calls:", calls["n"])   # 1
+    print(r1, from_cache1)   # {'text': 'hello'} False   -> ran
+    print(r2, from_cache2)   # {'text': 'hello'} True    -> served from the store
 ```
 
-## 2. The `@paid` decorator
+## 2. The decorator, with cache_info and cache_clear
 
-The same guard as a decorator, when the cache key is simply the function's
-arguments. Repeat identical calls return the cached result.
+`@memoize` needs no setup: it uses a shared default store at
+`~/.cache/wallet-helper`. Pass a `wallet=` to point it elsewhere (here a
+temporary one). The wrapped function carries `cache_info()` and `cache_clear()`,
+like `functools.lru_cache`.
 
 ```python
-import tempfile
-from wallet_helper import Wallet, Ledger
+import os_helper as osh
+from wallet_helper import Wallet, Ledger, memoize
 
-wallet = Wallet(Ledger(tempfile.mkdtemp()))
-runs = {"n": 0}
+with osh.temporary_folder() as tmp:
+    wallet = Wallet(Ledger(tmp))
 
-@wallet.paid("square", cost=0.01, currency="USD")
-def square(n):
-    runs["n"] += 1
-    return n * n
+    @memoize(wallet=wallet)
+    def square(n):
+        return n * n
 
-print(square(9), square(9), square(10))   # 81 81 100
-print("real calls:", runs["n"])           # 2  (9 was cached; 10 was new)
+    print(square(9), square(9), square(10))   # 81 81 100
+    print(square.cache_info())                 # {'entries': 2, 'hits': 1}
+    square.cache_clear()
+    print(square.cache_info())                 # {'entries': 0, 'hits': 0}
 ```
 
-## 3. Enforce a budget ceiling
+## 3. Ignore a volatile argument
 
-Attach a `Budget`. A cache **miss** that would overspend is refused *before* the
-paid call runs — you are never charged for the call that broke the ceiling. Cache
-**hits** are free and never touch the budget.
+When an argument does not change the result (a client handle, a session object),
+`ignore=` drops it from the key without a custom key function.
 
 ```python
-import tempfile
-from wallet_helper import Wallet, Ledger, Budget, BudgetExceeded
+import os_helper as osh
+from wallet_helper import Wallet, Ledger, memoize
 
-wallet = Wallet(Ledger(tempfile.mkdtemp()), budget=Budget(1.0, "EUR"))
+with osh.temporary_folder() as tmp:
+    wallet = Wallet(Ledger(tmp))
 
-wallet.call("api", {"q": 1}, lambda: "ok", cost=0.6, currency="EUR")   # spends 0.6
-try:
-    wallet.call("api", {"q": 2}, lambda: "ok", cost=0.6, currency="EUR")   # 0.6 + 0.6 > 1.0
-except BudgetExceeded as e:
-    print("refused:", e)
+    @memoize(wallet=wallet, ignore=("client",))
+    def fetch(doc_id, client):
+        return client.get(doc_id)
 
-print("remaining:", round(wallet.budget.remaining(), 2))   # 0.4
+    class Client:
+        def get(self, doc_id):
+            return f"doc:{doc_id}"
+
+    print(fetch(7, client=Client()))   # runs
+    print(fetch(7, client=Client()))   # different client, same key, served from the store
 ```
 
-## 4. Content-address a file (rename-proof)
+## 4. Content-address a file
 
 Pass a file path (or raw `bytes`) as the payload. The key is the file's content,
-so renaming the file still hits the cache, and two different files never collide.
+so renaming the file still hits, and two different files never collide.
 
 ```python
-import tempfile
+import os_helper as osh
 from pathlib import Path
 from wallet_helper import make_key
 
-d = Path(tempfile.mkdtemp())
-(d / "clip.wav").write_bytes(b"AUDIO-BYTES")
-(d / "renamed.wav").write_bytes(b"AUDIO-BYTES")   # same content, different name
+with osh.temporary_folder() as tmp:
+    d = Path(tmp)
+    (d / "clip.wav").write_bytes(b"AUDIO-BYTES")
+    (d / "renamed.wav").write_bytes(b"AUDIO-BYTES")   # same content, different name
 
-# Same content -> same key -> a cache hit even after the rename.
-print(make_key("gladia", d / "clip.wav") == make_key("gladia", d / "renamed.wav"))   # True
-# Bytes hash identically to the file that holds them.
-print(make_key("gladia", d / "clip.wav") == make_key("gladia", b"AUDIO-BYTES"))      # True
+    print(make_key("asr", d / "clip.wav") == make_key("asr", d / "renamed.wav"))   # True
+    print(make_key("asr", d / "clip.wav") == make_key("asr", b"AUDIO-BYTES"))       # True
 ```
 
-## 5. A custom key: ignore volatile arguments
+## 5. Single-flight across threads
 
-When only some arguments determine the result (e.g. a client handle that changes
-every call), pass a `key=` function so the volatile argument does not bust the
-cache.
+Two threads start the same slow call at once. Only one runs it; the other waits
+and receives the same result. No double work, no double bill.
 
 ```python
-import tempfile
+import os_helper as osh
+import threading, time
 from wallet_helper import Wallet, Ledger
 
-wallet = Wallet(Ledger(tempfile.mkdtemp()))
-runs = {"n": 0}
+with osh.temporary_folder() as tmp:
+    wallet = Wallet(Ledger(tmp))
+    runs = []
 
-# Only `n` identifies the result; the `client` handle is ignored.
-@wallet.paid("f", cost=0.01, key=lambda n, client: {"n": n})
-def f(n, client):
-    runs["n"] += 1
-    return n + 1
+    def slow():
+        runs.append(1)
+        time.sleep(0.3)   # long enough for the second thread to arrive mid-flight
+        return "value"
 
-print(f(1, client=object()))   # 2   -> real call
-print(f(1, client=object()))   # 2   -> different client, same key => cached
-print("real calls:", runs["n"])  # 1
+    out = []
+    def worker():
+        out.append(wallet.call("job", {"x": 1}, slow))
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for t in threads: t.start()
+    for t in threads: t.join()
+
+    print(len(runs))                       # 1   -> ran exactly once
+    print(sorted(c for _, c in out))       # [False, True]  -> one leader, one follower
 ```
 
-## 6. See what you spent and saved
+## 6. A shared store with SQLite
 
-`Ledger.stats()` aggregates real spend (each entry, once) and cache savings
-(`cost × hits`) per currency.
+The SQLite backend keeps one file that several processes can share, with atomic
+reuse counters. Drop it into a `Wallet` exactly like the JSON store.
 
 ```python
-import tempfile
-from wallet_helper import Wallet, Ledger
+import os_helper as osh
+from wallet_helper import Wallet, SqliteLedger
 
-ledger = Ledger(tempfile.mkdtemp())
-wallet = Wallet(ledger)
-
-for _ in range(3):   # one real call + two cache hits
-    wallet.call("gladia", {"file": "a.wav"}, lambda: "text", cost=0.75, currency="EUR")
-
-s = ledger.stats()
-print(s["entries"], s["hits"])                 # 1 2
-print(round(s["by_currency"]["EUR"]["spent"], 2))  # 0.75   paid once
-print(round(s["by_currency"]["EUR"]["saved"], 2))  # 1.5    two hits avoided
+with osh.temporary_folder() as tmp:
+    wallet = Wallet(SqliteLedger(tmp + "/ledger.db"))
+    r, from_cache = wallet.call("job", {"x": 1}, lambda: 42)
+    print(r, from_cache)   # 42 False
+    r, from_cache = wallet.call("job", {"x": 1}, lambda: 42)
+    print(r, from_cache)   # 42 True
 ```
 
-## 7. Command line
+## 7. Cross-process single-flight over HTTP
 
-Inspect the ledger from a shell. Two interchangeable CLIs ship: the
-dependency-free argparse one (always available) and a `click` variant (the
-`[cli]` extra). Point either at any ledger directory with `--dir`.
+`pip install "wallet-helper[api]"` runs a server that centralizes dedup for many
+clients, using the claim, submit, release protocol. Start it:
 
 ```bash
-# argparse CLI — no dependency, always available:
-python -m wallet_helper.cli_argparse stats     # spend + cache savings per currency
-python -m wallet_helper.cli_argparse path       # where the ledger lives
-python -m wallet_helper.cli_argparse clear       # wipe the ledger (irreversible)
-
-# click variant — pip install "wallet-helper[cli]":
-wallet-helper-click stats
-wallet-helper-click --dir ./my-ledger stats
-wallet-helper-click clear --yes                  # skip the confirmation prompt
+uvicorn wallet_helper.api:app     # docs at http://127.0.0.1:8000/docs
 ```
 
-## 8. HTTP service + GUI (optional)
-
-`pip install "wallet-helper[api]"` turns the ledger into a shared store several
-processes can use over HTTP, with a dashboard at `/gui`.
-
-```bash
-uvicorn wallet_helper.api:app          # then open http://127.0.0.1:8000/gui
-# interactive API docs at http://127.0.0.1:8000/docs
-```
+A client claims a key. If it is the leader it runs the work and submits the
+result; otherwise it waits and reads the result. This uses only the standard
+library, so a client needs nothing installed:
 
 ```python
-# Programmatic use with FastAPI's TestClient (no server process needed):
-from fastapi.testclient import TestClient
-from wallet_helper.api import app
+import json, time, urllib.request
 
-client = TestClient(app)
-key = client.post("/key", json={"namespace": "demo", "payload": {"x": 1}}).json()["key"]
-client.put("/records", json={"namespace": "demo", "payload": {"x": 1},
-                             "result": {"ok": True}, "cost": 0.5, "currency": "USD"})
-print(client.get(f"/records/{key}").json()["result"])   # {'ok': True}
-print(client.get("/stats").json()["entries"])           # 1
+BASE = "http://127.0.0.1:8000"
+
+def post(path, body):
+    req = urllib.request.Request(BASE + path, data=json.dumps(body).encode(),
+                                 headers={"Content-Type": "application/json"})
+    return json.load(urllib.request.urlopen(req))
+
+def get_or_run(namespace, payload, work):
+    call = {"namespace": namespace, "payload": payload}
+    while True:
+        outcome = post("/claim", call)
+        if outcome["status"] == "hit":
+            return outcome["result"]                       # already computed
+        if outcome["status"] == "leased":
+            result = work()                                # we are the leader
+            post("/submit", {**call, "result": result})
+            return result
+        time.sleep(0.2)                                    # pending: someone else runs it
+
+print(get_or_run("transcribe", {"file": "a.wav"}, lambda: {"text": "hello"}))
 ```
 
-> The HTTP and MCP surfaces expose only the *accounting* half (key, records,
-> hits, stats, budget checks). They never run your paid callable — that stays in
-> your process, so there is no remote-code-execution surface.
+Followers can also block on one call with `GET /result/{key}?wait=SECONDS`, which
+long-polls until the leader's result lands.
 
-## 9. MCP tool set (optional)
+## 8. Command line
 
-`pip install "wallet-helper[mcp]"` exposes the same accounting operations as
-Model Context Protocol tools, so an agent can share your ledger.
+Inspect and manage the store. Two interchangeable tools ship: the argparse one
+(always available) and a click variant (the `[cli]` extra). Point either at a
+JSON directory with `--dir` or a SQLite file with `--sqlite`.
 
 ```bash
-python -m wallet_helper.mcp_server      # stdio transport; point your MCP client here
-```
+python -m wallet_helper.cli_argparse stats            # entries and calls saved
+python -m wallet_helper.cli_argparse path              # where the store lives
+python -m wallet_helper.cli_argparse clear             # empty the store
 
-Tools: `stats`, `ledger_path`, `ledger_key`, `get_record`, `put_record`,
-`register_hit`, `budget_check`.
+wallet-helper-click --sqlite ./ledger.db stats         # inspect a SQLite store
+wallet-helper-click clear --yes                        # skip the confirmation prompt
+```

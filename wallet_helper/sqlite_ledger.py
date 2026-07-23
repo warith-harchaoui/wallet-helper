@@ -1,21 +1,21 @@
-"""SQLite-backed ledger — one file, concurrency-safe, still stdlib-only.
+"""SQLite-backed ledger: one file, concurrency-safe, with a cross-process lease.
 
-Module summary
---------------
-An interchangeable backend for :class:`wallet_helper.ledger.Ledger`. Where the
-default keeps one JSON file per entry (delightfully inspectable, ideal for a
-single process), :class:`SqliteLedger` keeps everything in **one** SQLite file
-with write-ahead logging — so many processes or threads can share and update one
-ledger without the last writer clobbering a hit counter. It satisfies the same
-:class:`~wallet_helper.ledger.LedgerLike` protocol, so :class:`Wallet`, the CLIs
-and the HTTP / MCP surfaces accept it wherever a ``Ledger`` fits.
+An interchangeable backend for :class:`wallet_helper.ledger.Ledger`. The default
+keeps one JSON file per entry, which is great for a single process. This backend
+keeps everything in one SQLite file with write-ahead logging, so many processes
+or hosts can share one store and update it without clobbering each other's reuse
+counters.
 
-``sqlite3`` ships with CPython, so this stays a zero-third-party-dependency
-backend — the concurrency-safe "shared ledger" without pulling in a server.
+It also adds a lease table (``claim`` / ``submit`` / ``release``) used for
+cross-process single-flight: while one caller computes a key, others see it as
+pending and wait, so the same heavy call is not run twice at the same time.
+
+``sqlite3`` ships with Python, so this stays dependency-light: the shared,
+concurrency-safe store without running a database server.
 
 Author
 ------
-Warith HARCHAOUI — https://linkedin.com/in/warith-harchaoui
+Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
 from __future__ import annotations
 
@@ -29,41 +29,46 @@ from wallet_helper.ledger import _DEFAULT_DIR
 
 
 class SqliteLedger:
-    """A single-file SQLite store of results for billable calls.
+    """A single-file SQLite store of results, with an in-flight lease table.
 
     Parameters
     ----------
     db_path : str or pathlib.Path, optional
         The database file. Defaults to ``<default ledger dir>/ledger.db`` (the
         same base as :class:`~wallet_helper.ledger.Ledger`, honouring
-        ``$WALLET_HELPER_DIR``). Parent directories are created on demand.
+        ``$WALLET_HELPER_DIR``). Parent directories are created if missing.
 
     Examples
     --------
-    >>> import tempfile
-    >>> lg = SqliteLedger(tempfile.mkdtemp() + "/ledger.db")
-    >>> lg.has("demo_x")
-    False
-    >>> lg.put("demo_x", {"ok": True}, cost=0.5, currency="EUR")
-    >>> lg.get("demo_x")
+    >>> import os_helper as osh
+    >>> with osh.temporary_folder() as tmp:
+    ...     lg = SqliteLedger(tmp + "/ledger.db")
+    ...     lg.put("demo_x", {"ok": True})
+    ...     lg.get("demo_x")
     {'ok': True}
     """
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         self.path = Path(db_path) if db_path is not None else _DEFAULT_DIR / "ledger.db"
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        # WAL lets readers and a writer proceed concurrently — the whole point of
-        # choosing SQLite over the one-file-per-entry backend for shared use.
         with self._connect() as conn:
+            # WAL lets readers and one writer proceed at once, which is the point
+            # of choosing SQLite over one-file-per-entry for shared use.
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS entries ("
                 "  key TEXT PRIMARY KEY,"
-                "  result TEXT NOT NULL,"      # the paid result, stored as JSON
-                "  cost REAL NOT NULL,"
-                "  currency TEXT NOT NULL,"
+                "  result TEXT NOT NULL,"      # the result, stored as JSON
                 "  created_at REAL NOT NULL,"
                 "  hits INTEGER NOT NULL DEFAULT 0"
+                ")"
+            )
+            # One row per key while a leader computes it, so concurrent callers
+            # wait instead of running the same work.
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS pending ("
+                "  key TEXT PRIMARY KEY,"
+                "  leased_at REAL NOT NULL"
                 ")"
             )
 
@@ -73,9 +78,7 @@ class SqliteLedger:
         return str(self.path)
 
     def _connect(self) -> sqlite3.Connection:
-        """Open a short-lived connection (timeout lets writers wait, not fail)."""
-        # A generous busy timeout means concurrent writers queue rather than raise
-        # "database is locked" under contention.
+        """Open a short-lived connection; the timeout makes writers wait, not fail."""
         return sqlite3.connect(self.path, timeout=30.0)
 
     def has(self, key: str) -> bool:
@@ -85,93 +88,128 @@ class SqliteLedger:
         return row is not None
 
     def get_record(self, key: str) -> dict | None:
-        """Return the full stored record (result + cost + hits), or ``None``."""
+        """Return the full stored record, or ``None`` if absent."""
         with self._connect() as conn:
             row = conn.execute(
-                "SELECT key, result, cost, currency, created_at, hits FROM entries WHERE key = ?",
-                (key,),
+                "SELECT key, result, created_at, hits FROM entries WHERE key = ?", (key,)
             ).fetchone()
         if row is None:
             return None
-        # Re-hydrate the JSON result; the rest are already native column types.
-        return {
-            "key": row[0],
-            "result": json.loads(row[1]),
-            "cost": row[2],
-            "currency": row[3],
-            "created_at": row[4],
-            "hits": row[5],
-        }
+        return {"key": row[0], "result": json.loads(row[1]), "created_at": row[2], "hits": row[3]}
 
     def get(self, key: str) -> Any | None:
         """Return just the stored result for ``key``, or ``None`` if absent."""
         record = self.get_record(key)
         return None if record is None else record["result"]
 
-    def put(self, key: str, result: Any, *, cost: float = 0.0, currency: str = "USD") -> None:
-        """Store ``result`` for ``key`` with its declared cost (overwrites).
-
-        Overwriting resets the hit counter to 0, matching the JSON backend: a
-        re-``put`` is a fresh entry, not a continuation of the old one.
-        """
+    def put(self, key: str, result: Any) -> None:
+        """Store ``result`` for ``key`` (overwrites, resetting the hit counter)."""
         with self._connect() as conn:
             conn.execute(
-                "INSERT INTO entries (key, result, cost, currency, created_at, hits) "
-                "VALUES (?, ?, ?, ?, ?, 0) "
-                "ON CONFLICT(key) DO UPDATE SET "
-                "  result=excluded.result, cost=excluded.cost,"
-                "  currency=excluded.currency, created_at=excluded.created_at, hits=0",
-                (key, json.dumps(result, ensure_ascii=False), float(cost), currency, time.time()),
+                "INSERT INTO entries (key, result, created_at, hits) VALUES (?, ?, ?, 0) "
+                "ON CONFLICT(key) DO UPDATE SET result=excluded.result, created_at=excluded.created_at, hits=0",
+                (key, json.dumps(result, ensure_ascii=False), time.time()),
             )
 
     def register_hit(self, key: str) -> None:
-        """Atomically increment the reuse counter for ``key`` (no-op if absent).
+        """Atomically count one reuse of ``key`` (no-op if absent).
 
-        The ``UPDATE ... hits = hits + 1`` is a single atomic statement, so
-        concurrent hits never lose a count — the reason to prefer this backend
-        over the read-modify-write of the JSON one under real concurrency.
+        The ``hits = hits + 1`` runs as a single statement, so concurrent reuses
+        never lose a count. This is the reason to prefer this backend over the
+        read-modify-write of the JSON one under real concurrency.
         """
         with self._connect() as conn:
             conn.execute("UPDATE entries SET hits = hits + 1 WHERE key = ?", (key,))
 
     def stats(self, namespace: str | None = None) -> dict:
-        """Aggregate spend + savings across entries (optionally one namespace).
-
-        Same return shape as :meth:`wallet_helper.ledger.Ledger.stats`.
-        """
-        by_currency: dict[str, dict[str, float]] = {}
-        entries = spent = saved = hits = 0
+        """Count stored entries and their reuses, for the store or one namespace."""
         with self._connect() as conn:
             if namespace is None:
-                rows = conn.execute("SELECT currency, cost, hits FROM entries").fetchall()
+                row = conn.execute("SELECT COUNT(*), COALESCE(SUM(hits), 0) FROM entries").fetchone()
             else:
-                # Keys are "<namespace>_<sha256>"; match that prefix. '_' is a LIKE
-                # wildcard, so escape it to anchor on the literal separator.
-                rows = conn.execute(
-                    r"SELECT currency, cost, hits FROM entries WHERE key LIKE ? ESCAPE '\'",
-                    (namespace.replace("_", r"\_") + r"\_%",),
-                ).fetchall()
-        for currency, cost, n_hits in rows:
-            entries += 1
-            hits += n_hits
-            spent += cost
-            saved += cost * n_hits
-            slot = by_currency.setdefault(currency, {"spent": 0.0, "saved": 0.0})
-            slot["spent"] += cost
-            slot["saved"] += cost * n_hits
-        return {"entries": entries, "spent": spent, "saved": saved, "hits": hits, "by_currency": by_currency}
+                like = (namespace.replace("_", r"\_") + r"\_%",)
+                row = conn.execute(
+                    r"SELECT COUNT(*), COALESCE(SUM(hits), 0) FROM entries WHERE key LIKE ? ESCAPE '\'", like
+                ).fetchone()
+        return {"entries": row[0], "hits": row[1]}
 
     def clear(self, namespace: str | None = None) -> None:
-        """Delete entries — all, or just one ``namespace`` (irreversible).
+        """Delete entries, all or just one ``namespace`` (irreversible).
 
         The database file itself remains; only rows are removed.
         """
         with self._connect() as conn:
             if namespace is None:
                 conn.execute("DELETE FROM entries")
+                conn.execute("DELETE FROM pending")
             else:
-                conn.execute(
-                    r"DELETE FROM entries WHERE key LIKE ? ESCAPE '\'",
-                    (namespace.replace("_", r"\_") + r"\_%",),
-                )
+                like = (namespace.replace("_", r"\_") + r"\_%",)
+                conn.execute(r"DELETE FROM entries WHERE key LIKE ? ESCAPE '\'", like)
+                conn.execute(r"DELETE FROM pending WHERE key LIKE ? ESCAPE '\'", like)
 
+    # --- Cross-process single-flight (claim / submit / release) ---------------
+    # One leader computes a key while others wait, so the same heavy call is not
+    # run twice at once across processes or hosts sharing this file.
+
+    def claim(self, key: str, lease_seconds: float = 300.0) -> dict:
+        """Get the cached result, or lease the right to compute it.
+
+        Parameters
+        ----------
+        key : str
+            The ledger key (see :func:`wallet_helper.ledger.make_key`).
+        lease_seconds : float, optional
+            How long a lease is honoured before it counts as abandoned, so a
+            crashed leader cannot block waiters forever. Defaults to 300 s.
+
+        Returns
+        -------
+        dict
+            ``{"status": "hit", "result": ...}`` if it is already computed,
+            ``{"status": "leased"}`` if you are the leader (compute, then
+            :meth:`submit`), or ``{"status": "pending"}`` if another caller is
+            computing it (wait and claim again).
+        """
+        record = self.get_record(key)
+        if record is not None:
+            self.register_hit(key)
+            return {"status": "hit", "result": record["result"]}
+
+        conn = self._connect()
+        conn.isolation_level = None  # take explicit control of the transaction
+        try:
+            # BEGIN IMMEDIATE grabs the write lock now, so the check-then-lease
+            # below cannot race another process doing the same.
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT result FROM entries WHERE key = ?", (key,)).fetchone()
+            if row is not None:
+                conn.execute("COMMIT")
+                self.register_hit(key)
+                return {"status": "hit", "result": json.loads(row[0])}
+            now = time.time()
+            lease = conn.execute("SELECT leased_at FROM pending WHERE key = ?", (key,)).fetchone()
+            if lease is not None and (now - lease[0]) < lease_seconds:
+                conn.execute("COMMIT")
+                return {"status": "pending"}
+            # No entry and no live lease: grant one, stealing a stale lease too.
+            conn.execute(
+                "INSERT INTO pending (key, leased_at) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET leased_at = excluded.leased_at",
+                (key, now),
+            )
+            conn.execute("COMMIT")
+            return {"status": "leased"}
+        finally:
+            conn.close()
+
+    def submit(self, key: str, result: Any) -> dict:
+        """Store a leader's result and release its lease; return the record."""
+        self.put(key, result)
+        with self._connect() as conn:
+            conn.execute("DELETE FROM pending WHERE key = ?", (key,))
+        return self.get_record(key)
+
+    def release(self, key: str) -> None:
+        """Drop a lease without storing a result, so a waiter can take over."""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM pending WHERE key = ?", (key,))
