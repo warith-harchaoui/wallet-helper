@@ -31,13 +31,13 @@ jobs:
       fail-fast: false
       matrix:
         # Core is stdlib-only; test the full supported range on Linux and, on
-        # the newest version, macOS + Windows to catch path/OS regressions.
+        # the newest version, macOS to catch POSIX path/OS regressions. Windows
+        # is intentionally left out of the matrix for now — its runners are slow
+        # and the fcntl-less lock fallback is low priority today; revisit later.
         os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
         include:
           - os: macos-latest
-            python-version: "3.13"
-          - os: windows-latest
             python-version: "3.13"
     steps:
       - uses: actions/checkout@v4

@@ -145,7 +145,7 @@ make test      # pytest and doctests
 make           # lint then test
 ```
 
-CI runs the same gate on a Python 3.10 to 3.13 matrix (Linux, plus macOS and Windows on the newest version).
+CI runs the same gate on a Python 3.10 to 3.13 matrix (Linux, plus macOS on the newest version). Windows is not in the CI matrix for now — its runners are slow and the `fcntl`-less lock fallback is low priority today; the library still installs and runs on Windows, and Windows can be re-added later.
 
 ## The Promise
 

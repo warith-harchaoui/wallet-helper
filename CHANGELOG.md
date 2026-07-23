@@ -67,6 +67,11 @@ persistent, content-addressed memoization plus single-flight deduplication.
 - Default branch renamed to `main` for consistency with the rest of the AI
   Helpers suite (the in-repo `blob/main` documentation links now resolve).
 
+### CI
+- Dropped the Windows job from the test matrix for now (slow runners; the
+  `fcntl`-less lock fallback is low priority today). CI keeps Linux 3.10–3.13
+  plus macOS on the newest version. Windows can be re-added later.
+
 ## [0.1.0] - 2026-07-22
 
 ### Added

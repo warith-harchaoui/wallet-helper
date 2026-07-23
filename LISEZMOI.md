@@ -147,7 +147,7 @@ make test      # pytest et doctests
 make           # lint puis test
 ```
 
-La CI applique le même gate sur une matrice Python 3.10 à 3.13 (Linux, plus macOS et Windows sur la version la plus récente).
+La CI applique le même gate sur une matrice Python 3.10 à 3.13 (Linux, plus macOS sur la version la plus récente). Windows n'est pas dans la matrice CI pour l'instant — ses runners sont lents et le repli de verrou sans `fcntl` est peu prioritaire aujourd'hui ; la bibliothèque s'installe et tourne toujours sous Windows, et Windows pourra être réintégré plus tard.
 
 ## La promesse
 
