@@ -102,17 +102,17 @@ class RemoteLedger:
         """Get the cached result, or lease the right to compute it (see the server)."""
         return self._request("POST", "/claim", {"key": key, "lease_seconds": lease_seconds})
 
-    def submit(self, key: str, result: Any, *, ttl: float | None = None) -> dict:
-        """Store a leader's result on the server and release its lease."""
-        return self._request("POST", "/submit", {"key": key, "result": result, "ttl": ttl})
+    def submit(self, key: str, result: Any, *, token: str | None = None, ttl: float | None = None) -> dict:
+        """Store a leader's result on the server and release its own lease."""
+        return self._request("POST", "/submit", {"key": key, "result": result, "token": token, "ttl": ttl})
 
-    def release(self, key: str) -> None:
-        """Drop a lease on the server so a waiter can take over."""
-        self._request("POST", "/release", {"key": key})
+    def release(self, key: str, token: str | None = None) -> None:
+        """Drop a lease on the server so a waiter can take over (your own, if fenced)."""
+        self._request("POST", "/release", {"key": key, "token": token})
 
-    def extend(self, key: str) -> bool:
+    def extend(self, key: str, token: str | None = None) -> bool:
         """Renew a lease on the server for a long-running job."""
-        resp = self._request("POST", "/extend", {"key": key})
+        resp = self._request("POST", "/extend", {"key": key, "token": token})
         return bool(resp and resp.get("extended"))
 
     # --- LedgerLike read/write surface ----------------------------------------

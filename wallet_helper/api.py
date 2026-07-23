@@ -53,11 +53,16 @@ from wallet_helper.sqlite_ledger import SqliteLedger
 
 
 class Ref(BaseModel):
-    """A reference to a call: a ready ``key``, or a ``namespace`` plus ``payload``."""
+    """A reference to a call: a ready ``key``, or a ``namespace`` plus ``payload``.
+
+    ``token`` is the fencing token from a ``claim``; pass it to ``submit``,
+    ``release``, and ``extend`` so only the current leader can finish a lease.
+    """
 
     key: str | None = None
     namespace: str | None = None
     payload: Any | None = None
+    token: str | None = None
 
 
 class ClaimRequest(Ref):
@@ -156,21 +161,21 @@ def create_app(ledger: SqliteLedger | None = None) -> FastAPI:
     def submit(req: SubmitRequest) -> dict:
         """Store a leader's result and release its lease."""
         k = _resolve_key(req)
-        store.submit(k, req.result, ttl=req.ttl)
+        store.submit(k, req.result, token=req.token, ttl=req.ttl)
         return {"key": k, "stored": True}
 
     @app.post("/release")
     def release(ref: Ref) -> dict:
         """Drop a lease without a result, so a waiter can take over."""
         k = _resolve_key(ref)
-        store.release(k)
+        store.release(k, token=ref.token)
         return {"key": k, "released": True}
 
     @app.post("/extend")
     def extend(ref: Ref) -> dict:
         """Renew a lease so a long-running job is not treated as abandoned."""
         k = _resolve_key(ref)
-        return {"key": k, "extended": store.extend(k)}
+        return {"key": k, "extended": store.extend(k, token=ref.token)}
 
     @app.get("/result/{key}")
     async def result(key: str, wait: float = 0.0, poll: float = 0.1) -> dict:
@@ -178,13 +183,15 @@ def create_app(ledger: SqliteLedger | None = None) -> FastAPI:
 
         With ``wait > 0`` this long-polls: it checks the ledger every ``poll``
         seconds until the result is ready or the wait runs out, so a follower can
-        block on one call and receive the leader's result when it lands.
+        block on one call and receive the leader's result when it lands. The
+        SQLite reads run in a worker thread, so a long poll never blocks the
+        event loop and the server stays responsive under load.
         """
         waited = 0.0
         while True:
-            record = store.get_record(key)
+            record = await asyncio.to_thread(store.get_record, key)
             if record is not None:
-                store.register_hit(key)
+                await asyncio.to_thread(store.register_hit, key)
                 return {"key": key, "result": record["result"]}
             if waited >= wait:
                 raise HTTPException(status_code=404, detail=f"no result for key {key!r} yet")

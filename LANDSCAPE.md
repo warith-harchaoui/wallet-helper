@@ -3,8 +3,13 @@
 Where wallet-helper sits among caching, memoization, single-flight, and
 idempotency tools. The pieces exist separately. What is uncommon is the
 combination: persistent, content-addressed memoization that also coalesces
-concurrent identical calls, in one process and across processes, staying local
-and light.
+concurrent identical calls, in one process and across processes, while staying
+local (no separate service required).
+
+A note on dependencies: wallet-helper has one direct dependency, os-helper (the
+shared utility layer of the AI Helpers suite), which in turn pulls a few common
+libraries (requests, pyyaml, tqdm, validators, python-dotenv). So it is
+local-first and self-contained at the service level, but not dependency-free.
 
 Two problems make a heavy call run twice:
 
@@ -27,11 +32,12 @@ Rated ⭐ (absent or poor) to ⭐⭐⭐⭐⭐ (best in class) per column.
 - **TTL / expiry**: per-entry freshness with expiry and eviction.
 - **Server for many clients**: a shared endpoint that centralizes dedup.
 - **Decorator**: transparent `@decorator` ergonomics.
-- **Light / local**: few dependencies, no separate service required.
+- **Local (no service)**: runs without a separate database or cache server. This
+  is about deployment footprint, not dependency count.
 
-| Project | Persistent | Content-addresses input | In-process single-flight | Cross-process single-flight | TTL / expiry | Server for many clients | Decorator | Light / local |
+| Project | Persistent | Content-addresses input | In-process single-flight | Cross-process single-flight | TTL / expiry | Server for many clients | Decorator | Local (no service) |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| **wallet-helper** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| **wallet-helper** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | `functools.lru_cache` | ⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
 | `joblib.Memory` | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
 | `diskcache` | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
@@ -47,7 +53,7 @@ Rated ⭐ (absent or poor) to ⭐⭐⭐⭐⭐ (best in class) per column.
 
 | Project | Pros | Cons |
 |---|---|---|
-| **wallet-helper** | Persistent and content-addressed (hashes file content and bytes, not just args); single-flight both in-process and cross-process; time-to-live, stale-while-revalidate, and eviction; optional HTTP server and `RemoteLedger` centralize dedup for a fleet; simple `@memoize`; local, one dependency. | Younger and smaller than the veterans; cross-process lease needs the SQLite backend or the server; no rolling budget windows or semantic (embedding) matching. |
+| **wallet-helper** | Persistent and content-addressed (hashes file content and bytes, not just args); single-flight in-process (threads) and cross-process (a fenced SQLite or HTTP lease, so the work runs once even under a leader crash); sync and async (`async def`); time-to-live, stale-while-revalidate, and automatic eviction; optional HTTP server and `RemoteLedger` centralize dedup for a fleet; simple `@memoize`; runs with no separate service. | Younger and smaller than the veterans; one direct dependency (os-helper) that pulls a few transitive libraries; cross-process lease needs the SQLite backend or the server; no rolling budget windows or semantic (embedding) matching. |
 | `functools.lru_cache` | Stdlib, zero setup, great `cache_info()`. | In-memory only (lost on restart); keys on args only; does not coalesce concurrent calls; bounded by `maxsize`. |
 | `joblib.Memory` | Mature; persists to disk; hashes argument content (numpy aware); invalidates when the function's source changes. | No concurrent-call coalescing; heavier; oriented to scientific pipelines. |
 | `diskcache` | Fast SQLite store; tags and bulk evict; `memoize_stampede`; locks. | Keys on args, not input file content; single-host; stampede tools are opt-in and separate. |

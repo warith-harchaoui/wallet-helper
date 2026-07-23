@@ -1,7 +1,10 @@
 # Runtime dependency for wallet-helper.
 #
 # The core builds on os-helper, the shared utility layer of the AI Helpers suite
-# (content-addressed hashing, temp folders, path helpers, logging).
+# (content-addressed hashing, temp folders, path helpers, logging). This is one
+# direct dependency, but it pulls a few transitive libraries of its own (requests,
+# pyyaml, tqdm, validators, python-dotenv). wallet-helper is local-first and needs
+# no separate service, but it is not dependency-free.
 os-helper>=1.7,<2
 
 # Optional surfaces live behind extras in pyproject.toml (install as needed):

@@ -29,9 +29,9 @@ It is content-addressed, so a renamed input file still hits and two different in
 
 What ships today:
 
-- **library** with `Wallet` and the `@memoize` decorator, over a `Ledger` (JSON files), a `SqliteLedger` (one shared file), or a `RemoteLedger` (an HTTP server). In-process single-flight is built in.
-- **cross-process single-flight** through the SQLite backend or the server (claim, submit, release, with a lease timeout and a heartbeat for long jobs).
-- **time-to-live and eviction**: per-entry `ttl`, optional stale-while-revalidate, and an `evict` policy by age or size.
+- **library** with `Wallet` and the `@memoize` decorator (sync and `async def`), over a `Ledger` (JSON files), a `SqliteLedger` (one shared file), or a `RemoteLedger` (an HTTP server). In-process single-flight is built in.
+- **cross-process single-flight** through the SQLite backend or the server, with a fencing token so the work runs once even if a leader stalls or crashes, a lease timeout, and a heartbeat for long jobs.
+- **time-to-live and eviction**: per-entry `ttl`, optional stale-while-revalidate, an `evict` policy by age or size, and an automatic size cap (`max_entries`).
 - **`wallet-helper` / `cli_argparse`** and **`wallet-helper-click`**: inspect, clear, and evict the store.
 - **HTTP dedup server** (the `[api]` extra) plus `RemoteLedger`, so many clients on any host share one dedup point.
 
@@ -101,6 +101,14 @@ def transcribe(path):
     return call_some_paid_api(path)
 ```
 
+Async functions work the same. The result is cached, never the coroutine, and concurrent awaits coalesce:
+
+```python
+@memoize
+async def fetch(url):
+    return await http_get(url)
+```
+
 Two command-line tools inspect and manage the store (it defaults to `$WALLET_HELPER_DIR`, then `~/.cache/wallet-helper`):
 
 ```bash
@@ -115,7 +123,7 @@ For a shared store and cross-process single-flight, use the SQLite backend or th
 
 ## Built on os-helper
 
-wallet-helper is part of the AI Helpers suite and builds on [os-helper](https://github.com/warith-harchaoui/os-helper) for content-addressed hashing, temporary folders, path helpers, and logging.
+wallet-helper is part of the AI Helpers suite and builds on [os-helper](https://github.com/warith-harchaoui/os-helper) for content-addressed hashing, path helpers, temporary folders, and logging. That is one direct dependency, which pulls a few common transitive libraries (requests, pyyaml, tqdm, and so on). wallet-helper is local-first and needs no separate service, but it is not dependency-free.
 
 ## Architecture
 

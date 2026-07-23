@@ -6,6 +6,7 @@ Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import pytest
@@ -63,3 +64,28 @@ def test_stats_and_clear_scope_to_a_namespace(ledger: Ledger) -> None:
 
 def test_missing_key_returns_none(ledger: Ledger) -> None:
     assert ledger.get("absent") is None and ledger.get_record("absent") is None
+
+
+def test_concurrent_hits_are_not_lost(ledger: Ledger) -> None:
+    # The hit counter is a locked read-modify-write, so parallel increments from
+    # several threads all land instead of clobbering each other.
+    ledger.put("ns_k", "v")
+
+    def bump() -> None:
+        for _ in range(50):
+            ledger.register_hit("ns_k")
+
+    threads = [threading.Thread(target=bump) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert ledger.stats()["hits"] == 200
+
+
+def test_max_entries_auto_evicts(tmp_path: Path) -> None:
+    ledger = Ledger(tmp_path, max_entries=2)
+    ledger.put("ns_a", 1)
+    ledger.put("ns_b", 2)
+    ledger.put("ns_c", 3)
+    assert ledger.stats()["entries"] == 2  # each put keeps the store within the cap

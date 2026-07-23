@@ -16,3 +16,6 @@ CODING.md
 # Stray dir created by the deepeval pytest plugin if present in the environment.
 .deepeval/
 .deepeval_telemetry.txt
+
+# Private, honest self-assessment. Never committed.
+ASSESSMENT.md

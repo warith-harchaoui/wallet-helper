@@ -31,9 +31,9 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 
 Ce qui est livré aujourd'hui :
 
-- **bibliothèque** avec `Wallet` et le décorateur `@memoize`, sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé), ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
-- **single-flight entre processus** via le backend SQLite ou le serveur (claim, submit, release, avec un délai de bail et un heartbeat pour les jobs longs).
-- **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, et une politique `evict` par âge ou par taille.
+- **bibliothèque** avec `Wallet` et le décorateur `@memoize` (synchrone et `async def`), sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé), ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
+- **single-flight entre processus** via le backend SQLite ou le serveur, avec un jeton de fencing pour que le travail s'exécute une seule fois même si un leader plante, un délai de bail, et un heartbeat pour les jobs longs.
+- **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, une politique `evict` par âge ou taille, et un plafond automatique (`max_entries`).
 - **`wallet-helper` / `cli_argparse`** et **`wallet-helper-click`** : inspecter, vider et éviter le stockage.
 - **serveur HTTP de déduplication** (l'extra `[api]`) plus `RemoteLedger`, pour que plusieurs clients sur n'importe quelle machine partagent un point de déduplication.
 
@@ -103,6 +103,14 @@ def transcribe(path):
     return call_some_paid_api(path)
 ```
 
+Les fonctions asynchrones marchent pareil. C'est le résultat qui est mis en cache, jamais la coroutine, et les `await` concurrents fusionnent :
+
+```python
+@memoize
+async def fetch(url):
+    return await http_get(url)
+```
+
 Deux outils en ligne de commande inspectent et gèrent le stockage (par défaut `$WALLET_HELPER_DIR`, puis `~/.cache/wallet-helper`) :
 
 ```bash
@@ -117,7 +125,7 @@ Pour un stockage partagé et le single-flight entre processus, utilisez le backe
 
 ## Construit sur os-helper
 
-wallet-helper fait partie de la suite AI Helpers et s'appuie sur [os-helper](https://github.com/warith-harchaoui/os-helper) pour le hachage adressé par contenu, les dossiers temporaires, les utilitaires de chemins et la journalisation.
+wallet-helper fait partie de la suite AI Helpers et s'appuie sur [os-helper](https://github.com/warith-harchaoui/os-helper) pour le hachage adressé par contenu, les utilitaires de chemins, les dossiers temporaires et la journalisation. C'est une seule dépendance directe, qui entraîne quelques bibliothèques transitives courantes (requests, pyyaml, tqdm, etc.). wallet-helper est local-first et ne nécessite aucun service séparé, mais n'est pas sans dépendance.
 
 ## Architecture
 

@@ -13,7 +13,8 @@ temporary store, so you can paste it into a REPL and watch it work.
 - [8. A shared store over HTTP with RemoteLedger](#8-a-shared-store-over-http-with-remoteledger)
 - [9. Time-to-live and eviction](#9-time-to-live-and-eviction)
 - [10. Stale-while-revalidate](#10-stale-while-revalidate)
-- [11. Command line](#11-command-line)
+- [11. Async functions](#11-async-functions)
+- [12. Command line](#12-command-line)
 
 ## 1. Memoize a heavy call
 
@@ -261,7 +262,36 @@ with osh.temporary_folder() as tmp:
     print(wallet.call("cfg", {}, build, ttl=100))     # (2, True)   -> refreshed value
 ```
 
-## 11. Command line
+## 11. Async functions
+
+`@memoize` handles `async def` too. It caches the awaited result, never the
+coroutine object, and concurrent awaits of the same call coalesce into one.
+
+```python
+import asyncio
+import os_helper as osh
+from wallet_helper import Wallet, Ledger, memoize
+
+with osh.temporary_folder() as tmp:
+    wallet = Wallet(Ledger(tmp))
+    runs = []
+
+    @memoize(wallet=wallet)
+    async def fetch(n):
+        runs.append(n)
+        await asyncio.sleep(0.1)
+        return n * n
+
+    async def main():
+        # Two concurrent awaits of the same call run the work once.
+        a, b = await asyncio.gather(fetch(6), fetch(6))
+        c = await fetch(6)          # served from the store
+        return a, b, c, len(runs)
+
+    print(asyncio.run(main()))       # (36, 36, 36, 1)
+```
+
+## 12. Command line
 
 Inspect and manage the store. Two interchangeable tools ship: the argparse one
 (always available) and a click variant (the `[cli]` extra). Point either at a

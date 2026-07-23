@@ -59,6 +59,35 @@ def test_extend_renews_a_lease(ledger: SqliteLedger) -> None:
     assert ledger.extend("absent") is False      # nothing to renew
 
 
+def test_fencing_token_blocks_a_stale_leader(ledger: SqliteLedger) -> None:
+    first = ledger.claim("asr_f")
+    assert first["status"] == "leased"
+    old_token = first["token"]
+
+    # The lease lapses and a new leader steals it, with a different token.
+    second = ledger.claim("asr_f", lease_seconds=0)
+    assert second["status"] == "leased" and second["token"] != old_token
+    new_token = second["token"]
+
+    # The revived old leader cannot extend or release the new leader's lease.
+    assert ledger.extend("asr_f", old_token) is False
+    ledger.release("asr_f", old_token)                       # no-op, wrong owner
+    assert ledger.claim("asr_f")["status"] == "pending"       # new lease still held
+
+    # The rightful holder can renew and release.
+    assert ledger.extend("asr_f", new_token) is True
+    ledger.release("asr_f", new_token)
+    assert ledger.claim("asr_f")["status"] == "leased"
+
+
+def test_max_entries_auto_evicts(tmp_path: Path) -> None:
+    ledger = SqliteLedger(tmp_path / "capped.db", max_entries=2)
+    ledger.put("ns_a", 1)
+    ledger.put("ns_b", 2)
+    ledger.put("ns_c", 3)
+    assert ledger.stats()["entries"] == 2  # the store never grows past the cap
+
+
 def test_clear_scopes_to_a_namespace(ledger: SqliteLedger) -> None:
     ledger.put("a_1", 1)
     ledger.put("b_1", 2)

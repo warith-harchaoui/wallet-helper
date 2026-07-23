@@ -17,15 +17,73 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Iterator, Protocol, runtime_checkable
 
 import os_helper as osh
+
+try:
+    import fcntl  # POSIX advisory file locks (macOS, Linux)
+except ImportError:  # pragma: no cover - Windows has no fcntl
+    fcntl = None  # type: ignore[assignment]
 
 # Default store location, outside any repo so cached results are not committed by
 # accident. Overridable per instance or through the environment variable.
 _DEFAULT_DIR = Path(os.environ.get("WALLET_HELPER_DIR", str(Path.home() / ".cache" / "wallet-helper")))
+
+# One in-process lock per store directory, shared across Ledger instances, so
+# threads in the same process never interleave a read-modify-write of an entry.
+_DIR_LOCKS: dict[str, threading.Lock] = {}
+_DIR_LOCKS_GUARD = threading.Lock()
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` atomically, so a reader never sees a half file.
+
+    The data goes to a temporary file in the same directory, then ``os.replace``
+    swaps it into place in one step (atomic on POSIX and Windows). A concurrent
+    writer or a crash mid-write can never leave a truncated or corrupt entry.
+    """
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=path.name + ".", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        # Never leave the temporary file behind if the swap did not happen.
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+        raise
+
+
+@contextmanager
+def _entry_lock(directory: Path) -> Iterator[None]:
+    """Serialize read-modify-write on a store directory, within and across processes.
+
+    Holds a per-directory :class:`threading.Lock` (so threads in this process
+    take turns) and, where available, an exclusive advisory lock on a small lock
+    file (so separate processes take turns too). On platforms without ``fcntl``
+    the cross-process guard is skipped and only the in-process lock applies.
+    """
+    key = str(directory)
+    with _DIR_LOCKS_GUARD:
+        lock = _DIR_LOCKS.setdefault(key, threading.Lock())
+    with lock:
+        if fcntl is None:
+            yield  # Windows: in-process lock only (documented on register_hit)
+            return
+        directory.mkdir(parents=True, exist_ok=True)
+        handle = open(directory / ".wallet-helper.lock", "a+")
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            handle.close()
 
 
 @runtime_checkable
@@ -157,6 +215,10 @@ class Ledger:
     cache_dir : str or pathlib.Path, optional
         Where entries live. Defaults to ``$WALLET_HELPER_DIR`` then
         ``~/.cache/wallet-helper``.
+    max_entries : int, optional
+        A size cap. When set, each :meth:`put` also evicts down to the newest
+        ``max_entries`` entries, so the store cannot grow without bound. ``None``
+        (default) means no automatic bound; call :meth:`evict` yourself.
 
     Examples
     --------
@@ -166,8 +228,9 @@ class Ledger:
     False
     """
 
-    def __init__(self, cache_dir: str | Path | None = None) -> None:
+    def __init__(self, cache_dir: str | Path | None = None, max_entries: int | None = None) -> None:
         self.dir = Path(cache_dir) if cache_dir is not None else _DEFAULT_DIR
+        self.max_entries = max_entries
 
     @property
     def location(self) -> str:
@@ -217,15 +280,27 @@ class Ledger:
             "expires_at": now + ttl if ttl is not None else None,
             "hits": 0,  # incremented every time the cached result is reused
         }
-        self._path(key).write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        # Atomic swap: overwriting an entry never exposes a partial file, so a
+        # concurrent writer or a crash cannot corrupt it.
+        _atomic_write(self._path(key), json.dumps(record, ensure_ascii=False, indent=2))
+        if self.max_entries is not None:
+            self.evict(max_entries=self.max_entries)
 
     def register_hit(self, key: str) -> None:
-        """Count one reuse of the cached result for ``key`` (no-op if absent)."""
-        record = self.get_record(key)
-        if record is None:
-            return
-        record["hits"] = int(record.get("hits", 0)) + 1
-        self._path(key).write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+        """Count one reuse of the cached result for ``key`` (no-op if absent).
+
+        The read-modify-write runs under a lock so concurrent hits do not lose a
+        count: threads in this process take turns, and separate processes take
+        turns too where advisory file locks are available (POSIX). On Windows the
+        cross-process count is best-effort; use :class:`SqliteLedger` for an exact
+        count under heavy multi-process concurrency.
+        """
+        with _entry_lock(self.dir):
+            record = self.get_record(key)
+            if record is None:
+                return
+            record["hits"] = int(record.get("hits", 0)) + 1
+            _atomic_write(self._path(key), json.dumps(record, ensure_ascii=False, indent=2))
 
     def clear(self, namespace: str | None = None) -> None:
         """Delete entries, all or just one ``namespace`` (irreversible).

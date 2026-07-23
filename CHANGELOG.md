@@ -12,13 +12,24 @@ persistent, content-addressed memoization plus single-flight deduplication.
 
 ### Added
 - **Single-flight**: two identical calls made at the same time collapse into
-  one. In-process coalescing is built into `Wallet`; cross-process coalescing
-  uses the claim lease. `Wallet` routes to the lease automatically for any
-  claim-capable backend, so `Wallet(SqliteLedger(...))` and
-  `Wallet(RemoteLedger(...))` get cross-process dedup with no extra code.
+  one, for sync and async callers. In-process coalescing is built into `Wallet`;
+  cross-process coalescing uses the claim lease. `Wallet` routes to the lease
+  automatically for any claim-capable backend, so `Wallet(SqliteLedger(...))` and
+  `Wallet(RemoteLedger(...))` get cross-process dedup with no extra code. Covered
+  by a real multi-process test.
+- **Async support**: `@memoize` on an `async def` caches the awaited result (not
+  the coroutine) and coalesces concurrent awaits, via `Wallet.acall`.
+- **Fencing token**: `claim` issues an owner token that `submit`, `release`, and
+  `extend` require, so a revived stale leader cannot disturb a new leader's lease
+  and the work runs once even under a leader crash.
 - **`SqliteLedger`**: a single shared file with write-ahead logging, atomic reuse
-  counters, and the in-flight lease (`claim` / `submit` / `release`), plus
+  counters, and the fenced in-flight lease (`claim` / `submit` / `release`), plus
   `extend` and a `heartbeat` context manager to keep a long job's lease alive.
+- **Concurrency-safe JSON store**: atomic writes (temp file plus `os.replace`)
+  and a locked read-modify-write hit counter, so concurrent writers cannot
+  corrupt an entry or lose a count.
+- **Automatic eviction**: a `max_entries` size cap on both stores, enforced on
+  every write, alongside the manual `evict(max_entries=, older_than=)`.
 - **Time-to-live and eviction**: a per-entry `ttl`, an optional
   `stale_while_revalidate` that serves a stale result and refreshes in the
   background, and `evict(max_entries=, older_than=)` (which always drops expired
@@ -29,8 +40,9 @@ persistent, content-addressed memoization plus single-flight deduplication.
   volatile argument, `ttl=`, and `cache_info()` / `cache_clear()` on the wrapper.
 - **HTTP dedup server** (`wallet_helper.api`, the `[api]` extra): `claim`,
   `submit`, `release`, `extend`, `clear`, `evict`, and a long-polling
-  `GET /result/{key}?wait=`. Every endpoint takes a ready key or a namespace and
-  payload.
+  `GET /result/{key}?wait=` whose SQLite reads run in a worker thread so the poll
+  never blocks the event loop. Every endpoint takes a ready key or a namespace
+  and payload.
 - `LANDSCAPE.md` comparing related caching, single-flight, and idempotency tools.
 
 ### Changed

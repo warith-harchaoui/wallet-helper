@@ -39,11 +39,12 @@ Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
 from __future__ import annotations
 
+import asyncio
 import inspect
 import threading
 import time
 from functools import wraps
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 import os_helper as osh
 
@@ -94,6 +95,8 @@ class Wallet:
         # Event the leader sets when done, so concurrent callers wait, not run.
         self._inflight: dict[str, threading.Event] = {}
         self._inflight_lock = threading.Lock()
+        # The async equivalent: key -> Future the leader coroutine resolves.
+        self._async_inflight: dict[str, asyncio.Future] = {}
 
     def call(
         self,
@@ -203,15 +206,108 @@ class Wallet:
             if status == "hit":
                 return outcome["result"], True
             if status == "leased":
+                token = outcome.get("token")  # fencing token: guards submit/release
                 try:
                     result = fn()
                 except BaseException:
-                    self.ledger.release(key)  # let a waiter take over on failure
+                    self.ledger.release(key, token)  # let a waiter take over on failure
                     raise
-                self.ledger.submit(key, result, ttl=ttl)
+                self.ledger.submit(key, result, token=token, ttl=ttl)
                 return result, False
             # pending: another caller is computing it; wait and try again.
             time.sleep(self._poll_interval)
+
+    async def acall(
+        self,
+        namespace: str,
+        key_payload: Any,
+        fn: Callable[[], Awaitable[Any]],
+        *,
+        ttl: float | None = None,
+        stale_while_revalidate: bool = False,
+    ) -> tuple[Any, bool]:
+        """Async twin of :meth:`call`: await ``fn`` once and cache its result.
+
+        This is what memoizes an ``async def`` correctly: it awaits the coroutine
+        and stores the *result*, never the coroutine object. Concurrent identical
+        awaits coalesce (async single-flight), and a claim-capable backend still
+        gives cross-process dedup (its blocking calls run in a worker thread).
+
+        Parameters mirror :meth:`call`, except ``fn`` is a zero-argument callable
+        returning an awaitable.
+        """
+        key = make_key(namespace, key_payload)
+        if hasattr(self.ledger, "claim"):
+            return await self._acall_via_claim(key, fn, ttl)
+        return await self._acall_local(key, fn, ttl, stale_while_revalidate)
+
+    async def _acall_local(self, key: str, fn: Callable[[], Awaitable[Any]], ttl: float | None, swr: bool) -> tuple[Any, bool]:
+        """In-process async path: freshness, then async single-flight."""
+        record = self.ledger.get_record(key)
+        if record is not None and is_fresh(record):
+            self.ledger.register_hit(key)
+            return record["result"], True
+        if record is not None and swr:
+            self.ledger.register_hit(key)
+            asyncio.ensure_future(self._arefresh(key, fn, ttl))  # refresh in the background
+            return record["result"], True
+        return await self._acompute_local(key, fn, ttl)
+
+    async def _acompute_local(self, key: str, fn: Callable[[], Awaitable[Any]], ttl: float | None) -> tuple[Any, bool]:
+        """Await ``fn`` once for ``key`` with async single-flight (leader/follower)."""
+        while True:
+            future = self._async_inflight.get(key)
+            if future is None:
+                # We are the leader. No await between get and insert, so on the
+                # single-threaded event loop this claim of leadership is a race-free.
+                future = asyncio.get_running_loop().create_future()
+                self._async_inflight[key] = future
+                try:
+                    result = await fn()
+                except BaseException as exc:
+                    self._async_inflight.pop(key, None)
+                    if not future.done():
+                        future.set_exception(exc)
+                    raise
+                self.ledger.put(key, result, ttl=ttl)
+                self._async_inflight.pop(key, None)
+                if not future.done():
+                    future.set_result(result)
+                return result, False
+            # A follower: await the leader's result (shield so our cancellation
+            # does not cancel the shared work).
+            try:
+                result = await asyncio.shield(future)
+            except BaseException:
+                continue  # leader failed; retry as a fresh contender
+            self.ledger.register_hit(key)
+            return result, True
+
+    async def _arefresh(self, key: str, fn: Callable[[], Awaitable[Any]], ttl: float | None) -> None:
+        """Recompute ``key`` in the background for stale-while-revalidate."""
+        try:
+            await self._acompute_local(key, fn, ttl)
+        except Exception as exc:
+            osh.warning(f"background refresh for {key} failed: {exc}")
+
+    async def _acall_via_claim(self, key: str, fn: Callable[[], Awaitable[Any]], ttl: float | None) -> tuple[Any, bool]:
+        """Cross-process async path: claim, await if leader, else poll for the result."""
+        while True:
+            outcome = await asyncio.to_thread(self.ledger.claim, key)
+            status = outcome["status"]
+            if status == "hit":
+                return outcome["result"], True
+            if status == "leased":
+                token = outcome.get("token")
+                try:
+                    result = await fn()
+                except BaseException:
+                    await asyncio.to_thread(self.ledger.release, key, token)
+                    raise
+                await asyncio.to_thread(self.ledger.submit, key, result, token=token, ttl=ttl)
+                return result, False
+            # pending: another caller is computing it; wait and try again.
+            await asyncio.sleep(self._poll_interval)
 
     def paid(
         self,
@@ -265,17 +361,34 @@ class Wallet:
         """
 
         def decorator(fn: Callable) -> Callable:
-            @wraps(fn)
-            def wrapper(*args: Any, **kwargs: Any) -> Any:
-                payload = key(*args, **kwargs) if key is not None else _payload_from_args(fn, args, kwargs, ignore)
-                result, _ = self.call(
-                    namespace,
-                    payload,
-                    lambda: fn(*args, **kwargs),
-                    ttl=ttl,
-                    stale_while_revalidate=stale_while_revalidate,
-                )
-                return result
+            def payload_for(args: tuple, kwargs: dict) -> Any:
+                return key(*args, **kwargs) if key is not None else _payload_from_args(fn, args, kwargs, ignore)
+
+            if inspect.iscoroutinefunction(fn):
+                # An async function: await it and cache the result, never the
+                # coroutine object (caching the coroutine is the classic footgun).
+                @wraps(fn)
+                async def wrapper(*args: Any, **kwargs: Any) -> Any:
+                    result, _ = await self.acall(
+                        namespace,
+                        payload_for(args, kwargs),
+                        lambda: fn(*args, **kwargs),
+                        ttl=ttl,
+                        stale_while_revalidate=stale_while_revalidate,
+                    )
+                    return result
+            else:
+
+                @wraps(fn)
+                def wrapper(*args: Any, **kwargs: Any) -> Any:
+                    result, _ = self.call(
+                        namespace,
+                        payload_for(args, kwargs),
+                        lambda: fn(*args, **kwargs),
+                        ttl=ttl,
+                        stale_while_revalidate=stale_while_revalidate,
+                    )
+                    return result
 
             # lru_cache-style introspection and eviction, scoped to this namespace.
             wrapper.cache_info = lambda: self.ledger.stats(namespace)

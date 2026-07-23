@@ -23,6 +23,7 @@ import json
 import sqlite3
 import threading
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
@@ -39,6 +40,9 @@ class SqliteLedger:
         The database file. Defaults to ``<default ledger dir>/ledger.db`` (the
         same base as :class:`~wallet_helper.ledger.Ledger`, honouring
         ``$WALLET_HELPER_DIR``). Parent directories are created if missing.
+    max_entries : int, optional
+        A size cap. When set, each :meth:`put` also evicts down to the newest
+        ``max_entries`` entries, so the store cannot grow without bound.
 
     Examples
     --------
@@ -50,8 +54,9 @@ class SqliteLedger:
     {'ok': True}
     """
 
-    def __init__(self, db_path: str | Path | None = None) -> None:
+    def __init__(self, db_path: str | Path | None = None, max_entries: int | None = None) -> None:
         self.path = Path(db_path) if db_path is not None else _DEFAULT_DIR / "ledger.db"
+        self.max_entries = max_entries
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
             # WAL lets readers and one writer proceed at once, which is the point
@@ -67,11 +72,13 @@ class SqliteLedger:
                 ")"
             )
             # One row per key while a leader computes it, so concurrent callers
-            # wait instead of running the same work.
+            # wait instead of running the same work. `owner` is the fencing token
+            # that guards extend/submit/release against a revived stale leader.
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS pending ("
                 "  key TEXT PRIMARY KEY,"
-                "  leased_at REAL NOT NULL"
+                "  leased_at REAL NOT NULL,"
+                "  owner TEXT NOT NULL DEFAULT ''"
                 ")"
             )
 
@@ -120,6 +127,8 @@ class SqliteLedger:
                 "expires_at=excluded.expires_at, hits=0",
                 (key, json.dumps(result, ensure_ascii=False), now, expires_at),
             )
+        if self.max_entries is not None:
+            self.evict(max_entries=self.max_entries)
 
     def register_hit(self, key: str) -> None:
         """Atomically count one reuse of ``key`` (no-op if absent).
@@ -176,9 +185,9 @@ class SqliteLedger:
         -------
         dict
             ``{"status": "hit", "result": ...}`` if it is already computed,
-            ``{"status": "leased"}`` if you are the leader (compute, then
-            :meth:`submit`), or ``{"status": "pending"}`` if another caller is
-            computing it (wait and claim again).
+            ``{"status": "leased", "token": ...}`` if you are the leader (compute,
+            then :meth:`submit` with the token), or ``{"status": "pending"}`` if
+            another caller is computing it (wait and claim again).
         """
         conn = self._connect()
         conn.isolation_level = None  # take explicit control of the transaction
@@ -197,58 +206,79 @@ class SqliteLedger:
             if lease is not None and (now - lease[0]) < lease_seconds:
                 conn.execute("COMMIT")
                 return {"status": "pending"}
-            # No fresh entry and no live lease: grant one, stealing a stale lease too.
+            # No fresh entry and no live lease: grant one (stealing a stale lease)
+            # with a fresh fencing token that the leader must present to finish.
+            token = uuid.uuid4().hex
             conn.execute(
-                "INSERT INTO pending (key, leased_at) VALUES (?, ?) "
-                "ON CONFLICT(key) DO UPDATE SET leased_at = excluded.leased_at",
-                (key, now),
+                "INSERT INTO pending (key, leased_at, owner) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET leased_at = excluded.leased_at, owner = excluded.owner",
+                (key, now, token),
             )
             conn.execute("COMMIT")
-            return {"status": "leased"}
+            return {"status": "leased", "token": token}
         finally:
             conn.close()
 
-    def submit(self, key: str, result: Any, *, ttl: float | None = None) -> dict:
-        """Store a leader's result and release its lease; return the record."""
+    def submit(self, key: str, result: Any, *, token: str | None = None, ttl: float | None = None) -> dict:
+        """Store a leader's result and release its own lease; return the record.
+
+        The result is stored unconditionally (it is deterministic, so a late
+        submit is harmless), but only a lease held by ``token`` is released, so a
+        revived stale leader cannot drop a new leader's lease. Passing ``token``
+        is what makes the run "exactly once" under a leader crash and revival.
+        """
         self.put(key, result, ttl=ttl)
         with self._connect() as conn:
-            conn.execute("DELETE FROM pending WHERE key = ?", (key,))
+            if token is None:
+                conn.execute("DELETE FROM pending WHERE key = ?", (key,))
+            else:
+                conn.execute("DELETE FROM pending WHERE key = ? AND owner = ?", (key, token))
         return self.get_record(key)
 
-    def release(self, key: str) -> None:
-        """Drop a lease without storing a result, so a waiter can take over."""
+    def release(self, key: str, token: str | None = None) -> None:
+        """Drop a lease so a waiter can take over (only your own, if ``token`` is given)."""
         with self._connect() as conn:
-            conn.execute("DELETE FROM pending WHERE key = ?", (key,))
+            if token is None:
+                conn.execute("DELETE FROM pending WHERE key = ?", (key,))
+            else:
+                conn.execute("DELETE FROM pending WHERE key = ? AND owner = ?", (key, token))
 
-    def extend(self, key: str) -> bool:
+    def extend(self, key: str, token: str | None = None) -> bool:
         """Renew a lease so a long job is not treated as abandoned.
 
-        A leader running work longer than ``lease_seconds`` calls this (directly
-        or through :meth:`heartbeat`) to reset the lease clock, so waiters do not
-        steal leadership from a job that is still making progress.
+        A leader running longer than ``lease_seconds`` calls this (directly or
+        through :meth:`heartbeat`) to reset the lease clock. With ``token`` the
+        renewal only applies to a lease you still own, so a revived stale leader
+        cannot extend the lease a new leader now holds.
 
         Returns
         -------
         bool
-            ``True`` if a lease existed and was renewed, ``False`` otherwise.
+            ``True`` if a lease you may renew existed and was renewed.
         """
         with self._connect() as conn:
-            cur = conn.execute("UPDATE pending SET leased_at = ? WHERE key = ?", (time.time(), key))
+            if token is None:
+                cur = conn.execute("UPDATE pending SET leased_at = ? WHERE key = ?", (time.time(), key))
+            else:
+                cur = conn.execute(
+                    "UPDATE pending SET leased_at = ? WHERE key = ? AND owner = ?", (time.time(), key, token)
+                )
         return cur.rowcount > 0
 
     @contextmanager
-    def heartbeat(self, key: str, *, interval: float = 60.0) -> Iterator[None]:
+    def heartbeat(self, key: str, token: str | None = None, *, interval: float = 60.0) -> Iterator[None]:
         """Renew ``key``'s lease every ``interval`` seconds for the duration of a block.
 
-        Wrap a long computation in this so its lease never lapses:
+        Pass the ``token`` from :meth:`claim` so the renewal is fenced to the
+        lease you hold. Wrap a long computation in this so its lease never lapses:
 
         >>> import os_helper as osh
         >>> with osh.temporary_folder() as tmp:
         ...     lg = SqliteLedger(tmp + "/ledger.db")
-        ...     _ = lg.claim("job_1")
-        ...     with lg.heartbeat("job_1", interval=0.05):
+        ...     lease = lg.claim("job_1")
+        ...     with lg.heartbeat("job_1", lease["token"], interval=0.05):
         ...         result = 6 * 7            # a long job, kept alive meanwhile
-        ...     _ = lg.submit("job_1", result)
+        ...     _ = lg.submit("job_1", result, token=lease["token"])
         ...     lg.get("job_1")
         42
         """
@@ -257,7 +287,7 @@ class SqliteLedger:
         def _renew() -> None:
             # Ping until the block exits; wait() returns True only when stopped.
             while not stop.wait(interval):
-                self.extend(key)
+                self.extend(key, token)
 
         thread = threading.Thread(target=_renew, daemon=True)
         thread.start()
