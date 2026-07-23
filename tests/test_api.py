@@ -64,3 +64,29 @@ def test_stats_counts_entries(client: TestClient) -> None:
     client.post("/claim", json=call)
     client.post("/submit", json={**call, "result": 1})
     assert client.get("/stats").json()["entries"] == 1
+
+
+def test_extend_renews_a_lease(client: TestClient) -> None:
+    call = {"namespace": "asr", "payload": {"file": "d.wav"}}
+    client.post("/claim", json=call)
+    assert client.post("/extend", json=call).json()["extended"] is True
+
+
+def test_clear_empties_the_store(client: TestClient) -> None:
+    call = {"namespace": "asr", "payload": {"file": "e.wav"}}
+    client.post("/claim", json=call)
+    client.post("/submit", json={**call, "result": 1})
+    client.post("/clear", json={})
+    assert client.get("/stats").json()["entries"] == 0
+
+
+def test_evict_reports_removed_count(client: TestClient) -> None:
+    for name in ("f.wav", "g.wav"):
+        call = {"namespace": "asr", "payload": {"file": name}}
+        client.post("/claim", json=call)
+        client.post("/submit", json={**call, "result": 1})
+    assert client.post("/evict", json={"max_entries": 1}).json()["removed"] == 1
+
+
+def test_missing_ref_is_422(client: TestClient) -> None:
+    assert client.post("/claim", json={}).status_code == 422

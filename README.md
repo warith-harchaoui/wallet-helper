@@ -29,10 +29,11 @@ It is content-addressed, so a renamed input file still hits and two different in
 
 What ships today:
 
-- **library** with `Wallet` and the `@memoize` decorator, over a `Ledger` (JSON files) or a `SqliteLedger` (one shared file). In-process single-flight is built in.
-- **cross-process single-flight** through the SQLite backend's claim, submit, release lease.
-- **`wallet-helper` / `cli_argparse`** and **`wallet-helper-click`**: inspect and clear the store.
-- **HTTP dedup server** (the `[api]` extra): claim, submit, and long-poll a result across many clients.
+- **library** with `Wallet` and the `@memoize` decorator, over a `Ledger` (JSON files), a `SqliteLedger` (one shared file), or a `RemoteLedger` (an HTTP server). In-process single-flight is built in.
+- **cross-process single-flight** through the SQLite backend or the server (claim, submit, release, with a lease timeout and a heartbeat for long jobs).
+- **time-to-live and eviction**: per-entry `ttl`, optional stale-while-revalidate, and an `evict` policy by age or size.
+- **`wallet-helper` / `cli_argparse`** and **`wallet-helper-click`**: inspect, clear, and evict the store.
+- **HTTP dedup server** (the `[api]` extra) plus `RemoteLedger`, so many clients on any host share one dedup point.
 
 ## Installation
 
@@ -85,6 +86,21 @@ transcribe.cache_info()    # {'entries': 1, 'hits': 1}
 transcribe.cache_clear()   # forget this function's stored results
 ```
 
+Set a freshness window with `ttl` (seconds), and share one store across a fleet by pointing at a running server:
+
+```python
+from wallet_helper import Wallet, RemoteLedger, memoize
+
+@memoize(ttl=3600)                       # results expire after an hour
+def price(symbol):
+    return call_pricing_api(symbol)
+
+wallet = Wallet(RemoteLedger("http://cache.internal:8000"))
+@memoize(wallet=wallet)                  # every host dedups through one server
+def transcribe(path):
+    return call_some_paid_api(path)
+```
+
 Two command-line tools inspect and manage the store (it defaults to `$WALLET_HELPER_DIR`, then `~/.cache/wallet-helper`):
 
 ```bash
@@ -107,8 +123,9 @@ wallet-helper is part of the AI Helpers suite and builds on [os-helper](https://
 |---|---|
 | `make_key` | Content hash of a namespace plus a payload (arguments, file content, or bytes). |
 | `Ledger` | Default store: one JSON file per entry. |
-| `SqliteLedger` | One shared SQLite file, atomic reuse counters, and the claim/submit/release lease. |
-| `Wallet` / `memoize` | Front door: lookup, in-process single-flight, then store. |
+| `SqliteLedger` | One shared SQLite file, atomic reuse counters, TTL, and the claim/submit/release/extend lease. |
+| `RemoteLedger` | A `LedgerLike` that talks to the server, so `Wallet(RemoteLedger(url))` dedups across a fleet. |
+| `Wallet` / `memoize` | Front door: lookup, single-flight (in-process or via the lease), then store. |
 | `wallet_helper.api` | HTTP server that centralizes dedup for many clients. |
 
 ## Tests

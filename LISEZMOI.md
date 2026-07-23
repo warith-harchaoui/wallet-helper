@@ -31,10 +31,11 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 
 Ce qui est livré aujourd'hui :
 
-- **bibliothèque** avec `Wallet` et le décorateur `@memoize`, sur un `Ledger` (fichiers JSON) ou un `SqliteLedger` (un fichier partagé). Le single-flight en processus est intégré.
-- **single-flight entre processus** via le bail (claim, submit, release) du backend SQLite.
-- **`wallet-helper` / `cli_argparse`** et **`wallet-helper-click`** : inspecter et vider le stockage.
-- **serveur HTTP de déduplication** (l'extra `[api]`) : claim, submit, et attente longue d'un résultat pour plusieurs clients.
+- **bibliothèque** avec `Wallet` et le décorateur `@memoize`, sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé), ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
+- **single-flight entre processus** via le backend SQLite ou le serveur (claim, submit, release, avec un délai de bail et un heartbeat pour les jobs longs).
+- **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, et une politique `evict` par âge ou par taille.
+- **`wallet-helper` / `cli_argparse`** et **`wallet-helper-click`** : inspecter, vider et éviter le stockage.
+- **serveur HTTP de déduplication** (l'extra `[api]`) plus `RemoteLedger`, pour que plusieurs clients sur n'importe quelle machine partagent un point de déduplication.
 
 ## Installation
 
@@ -87,6 +88,21 @@ transcribe.cache_info()    # {'entries': 1, 'hits': 1}
 transcribe.cache_clear()   # oublier les résultats stockés de cette fonction
 ```
 
+Fixez une fenêtre de fraîcheur avec `ttl` (secondes), et partagez un stockage sur tout un parc en pointant vers un serveur :
+
+```python
+from wallet_helper import Wallet, RemoteLedger, memoize
+
+@memoize(ttl=3600)                       # les résultats expirent après une heure
+def price(symbol):
+    return call_pricing_api(symbol)
+
+wallet = Wallet(RemoteLedger("http://cache.internal:8000"))
+@memoize(wallet=wallet)                  # chaque machine déduplique via un serveur
+def transcribe(path):
+    return call_some_paid_api(path)
+```
+
 Deux outils en ligne de commande inspectent et gèrent le stockage (par défaut `$WALLET_HELPER_DIR`, puis `~/.cache/wallet-helper`) :
 
 ```bash
@@ -109,8 +125,9 @@ wallet-helper fait partie de la suite AI Helpers et s'appuie sur [os-helper](htt
 |---|---|
 | `make_key` | Hachage de contenu d'un namespace et d'un payload (arguments, contenu de fichier, ou octets). |
 | `Ledger` | Stockage par défaut : un fichier JSON par entrée. |
-| `SqliteLedger` | Un fichier SQLite partagé, compteurs de réutilisation atomiques, et le bail claim/submit/release. |
-| `Wallet` / `memoize` | Porte d'entrée : recherche, single-flight en processus, puis stockage. |
+| `SqliteLedger` | Un fichier SQLite partagé, compteurs atomiques, TTL, et le bail claim/submit/release/extend. |
+| `RemoteLedger` | Un `LedgerLike` qui parle au serveur, donc `Wallet(RemoteLedger(url))` déduplique sur tout un parc. |
+| `Wallet` / `memoize` | Porte d'entrée : recherche, single-flight (en processus ou via le bail), puis stockage. |
 | `wallet_helper.api` | Serveur HTTP qui centralise la déduplication pour plusieurs clients. |
 
 ## Tests

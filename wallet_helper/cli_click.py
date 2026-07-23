@@ -78,6 +78,16 @@ def clear(ledger: LedgerLike, yes: bool) -> None:
     click.echo(f"cleared {ledger.location}")
 
 
+@cli.command()
+@click.option("--max-entries", type=int, default=None, help="Keep only the newest N entries.")
+@click.option("--older-than", type=float, default=None, help="Remove entries older than this many seconds.")
+@click.pass_obj
+def evict(ledger: LedgerLike, max_entries: int | None, older_than: float | None) -> None:
+    """Prune expired results, and optionally by age or size."""
+    removed = ledger.evict(max_entries=max_entries, older_than=older_than)
+    click.echo(f"evicted {removed} entries from {ledger.location}")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the ``wallet-helper-click`` console script.
 

@@ -53,6 +53,12 @@ def test_stale_lease_is_stolen(ledger: SqliteLedger) -> None:
     assert ledger.claim("asr_z", lease_seconds=0)["status"] == "leased"
 
 
+def test_extend_renews_a_lease(ledger: SqliteLedger) -> None:
+    assert ledger.claim("asr_k", lease_seconds=100)["status"] == "leased"
+    assert ledger.extend("asr_k") is True       # a held lease is renewed
+    assert ledger.extend("absent") is False      # nothing to renew
+
+
 def test_clear_scopes_to_a_namespace(ledger: SqliteLedger) -> None:
     ledger.put("a_1", 1)
     ledger.put("b_1", 2)

@@ -18,27 +18,36 @@ Most tools address one problem. wallet-helper addresses both, with the same key.
 
 ## Feature comparison
 
-Legend: yes, no, partial.
+Rated ⭐ (absent or poor) to ⭐⭐⭐⭐⭐ (best in class) per column.
 
-| Project | Persistent (survives restart) | Content-addresses file / bytes input | In-process single-flight | Cross-process single-flight | Server for many clients | Decorator | Namespace evict | Light / local |
-|---|---|---|---|---|---|---|---|---|
-| **wallet-helper** | yes | yes | yes (wait and share) | yes (SQLite lease) | yes (own HTTP) | yes | yes | yes (one dep) |
-| `functools.lru_cache` | no | no | no | no | no | yes | no | yes (stdlib) |
-| `joblib.Memory` | yes | partial (arg content) | no | no | no | yes | partial (per function) | partial (dep) |
-| `diskcache` | yes | no (args) | partial (`memoize_stampede`, `Lock`) | partial (SQLite, same host) | no | yes | yes (tags) | yes |
-| `cachier` | yes | no | no | partial (mongo / redis) | no | yes | partial | partial |
-| `requests-cache` | yes | no (HTTP request) | no | no | no | no (session) | partial | HTTP only |
-| `dogpile.cache` | yes (backends) | no | yes (mutex `get_or_create`) | yes (with shared backend) | no (needs cache server) | yes | partial (regions) | no (needs backend) |
-| Go `singleflight` | no (in-flight only) | no | yes | no | no | no | no | yes |
-| AWS Powertools Idempotency | yes (DynamoDB / redis) | partial (JMESPath key) | partial (local cache) | yes (reject and retry) | no (lib plus store) | yes | no | no (needs store) |
-| Stripe idempotency keys | yes (24 h) | no (client key) | yes (409 on concurrent) | yes | yes (Stripe's) | no | no | no (remote) |
-| `litellm` cache | yes (backends) | no (prompt) | no | partial (redis) | no | no | partial | no (LLM only, large) |
+- **Persistent**: results survive a process restart.
+- **Content-addresses input**: keys on a file's content or raw bytes, not just arguments.
+- **In-process single-flight**: concurrent identical calls in one process coalesce into one.
+- **Cross-process single-flight**: the same, across processes or hosts.
+- **TTL / expiry**: per-entry freshness with expiry and eviction.
+- **Server for many clients**: a shared endpoint that centralizes dedup.
+- **Decorator**: transparent `@decorator` ergonomics.
+- **Light / local**: few dependencies, no separate service required.
+
+| Project | Persistent | Content-addresses input | In-process single-flight | Cross-process single-flight | TTL / expiry | Server for many clients | Decorator | Light / local |
+|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
+| **wallet-helper** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| `functools.lru_cache` | ⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
+| `joblib.Memory` | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
+| `diskcache` | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
+| `cachier` | ⭐⭐⭐⭐ | ⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
+| `requests-cache` | ⭐⭐⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐⭐⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ |
+| `dogpile.cache` | ⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐ |
+| Go `singleflight` | ⭐ | ⭐ | ⭐⭐⭐⭐⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐⭐⭐⭐ |
+| AWS Powertools Idempotency | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ | ⭐ |
+| Stripe idempotency keys | ⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ | ⭐ |
+| `litellm` cache | ⭐⭐⭐⭐ | ⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ |
 
 ## Pros and cons
 
 | Project | Pros | Cons |
 |---|---|---|
-| **wallet-helper** | Persistent and content-addressed (hashes file content and bytes, not just args); single-flight both in-process and cross-process; optional HTTP server centralizes dedup; simple `@memoize`; local, one dependency. | Younger and smaller than the veterans; no time-to-live or eviction policy yet; cross-process lease needs the SQLite backend or the server. |
+| **wallet-helper** | Persistent and content-addressed (hashes file content and bytes, not just args); single-flight both in-process and cross-process; time-to-live, stale-while-revalidate, and eviction; optional HTTP server and `RemoteLedger` centralize dedup for a fleet; simple `@memoize`; local, one dependency. | Younger and smaller than the veterans; cross-process lease needs the SQLite backend or the server; no rolling budget windows or semantic (embedding) matching. |
 | `functools.lru_cache` | Stdlib, zero setup, great `cache_info()`. | In-memory only (lost on restart); keys on args only; does not coalesce concurrent calls; bounded by `maxsize`. |
 | `joblib.Memory` | Mature; persists to disk; hashes argument content (numpy aware); invalidates when the function's source changes. | No concurrent-call coalescing; heavier; oriented to scientific pipelines. |
 | `diskcache` | Fast SQLite store; tags and bulk evict; `memoize_stampede`; locks. | Keys on args, not input file content; single-host; stampede tools are opt-in and separate. |
@@ -64,3 +73,5 @@ wallet-helper deliberately borrows proven ideas:
   check-then-lease step is race-free across processes.
 - `cache_info()` and `cache_clear()` on the decorated function, from
   `functools.lru_cache`, and namespace eviction, from `diskcache` tags.
+- Per-entry time-to-live and stale-while-revalidate, from `requests-cache`
+  (`expire_after`), `diskcache` (`expire`), and `dogpile.cache`.

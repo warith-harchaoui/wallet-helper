@@ -51,6 +51,9 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("stats", help="Show how many results are cached and how many calls they saved.")
     sub.add_parser("path", help="Print where the ledger is stored.")
     sub.add_parser("clear", help="Delete every cached result (irreversible).")
+    evict = sub.add_parser("evict", help="Prune expired results, and optionally by age or size.")
+    evict.add_argument("--max-entries", type=int, default=None, help="Keep only the newest N entries.")
+    evict.add_argument("--older-than", type=float, default=None, help="Remove entries older than this many seconds.")
 
     args = parser.parse_args(argv)
     ledger = _open_ledger(args.dir, args.sqlite)
@@ -61,6 +64,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "clear":
         ledger.clear()
         print(f"cleared {ledger.location}")
+        return 0
+    if args.command == "evict":
+        removed = ledger.evict(max_entries=args.max_entries, older_than=args.older_than)
+        print(f"evicted {removed} entries from {ledger.location}")
         return 0
     # stats
     s = ledger.stats()

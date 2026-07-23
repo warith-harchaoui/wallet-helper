@@ -6,19 +6,22 @@ almost the same time. The server holds one shared ledger and hands out a lease:
 the first caller of a key runs the work, everyone else waits and gets that same
 result when it lands.
 
+Every endpoint accepts either a ready-made ``key`` or a ``namespace`` plus a
+``payload`` (the server hashes it), so both :class:`wallet_helper.remote.RemoteLedger`
+(which sends keys) and a hand-written client (which sends inputs) work.
+
 Protocol (claim, run, submit)
 -----------------------------
-1. ``POST /claim`` with a namespace and payload. The reply is one of:
-   ``hit`` (already computed, use ``result``), ``leased`` (you are the leader,
-   run the work then ``POST /submit``), or ``pending`` (someone else is running
-   it, wait and claim again, or long-poll ``GET /result``).
-2. Leader runs the heavy work, then ``POST /submit`` with the result. On failure
-   it calls ``POST /release`` so a waiter can take over.
+1. ``POST /claim``. The reply is ``hit`` (already computed, use ``result``),
+   ``leased`` (you are the leader, run the work then ``POST /submit``), or
+   ``pending`` (someone else is running it, wait and claim again).
+2. The leader runs the work, then ``POST /submit`` with the result. On failure it
+   calls ``POST /release`` so a waiter can take over. For a long job it calls
+   ``POST /extend`` to keep the lease alive.
 3. Followers either re-claim, or call ``GET /result/{key}?wait=SECONDS`` which
    blocks until the result is ready.
 
-There is no endpoint that runs your code: the work stays in your process, so the
-server never executes caller-supplied code.
+There is no endpoint that runs your code: the work stays in your process.
 
 Run it
 ------
@@ -33,9 +36,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+import os_helper as osh
+
 try:
     from fastapi import FastAPI, HTTPException
-    from pydantic import BaseModel, Field
+    from pydantic import BaseModel
 except ModuleNotFoundError as exc:  # pragma: no cover - only hit without fastapi
     raise SystemExit(
         "The HTTP surface needs the optional 'api' extra. Install it with\n"
@@ -47,23 +52,64 @@ from wallet_helper.ledger import make_key
 from wallet_helper.sqlite_ledger import SqliteLedger
 
 
-class Call(BaseModel):
-    """A namespace plus the payload that identifies one call."""
+class Ref(BaseModel):
+    """A reference to a call: a ready ``key``, or a ``namespace`` plus ``payload``."""
 
-    namespace: str = Field(..., description="Scope for the call, e.g. 'transcribe'.")
-    payload: Any = Field(..., description="What determines the result (any JSON value).")
+    key: str | None = None
+    namespace: str | None = None
+    payload: Any | None = None
 
 
-class ClaimRequest(Call):
+class ClaimRequest(Ref):
     """A claim, with how long the lease is honoured before it can be stolen."""
 
     lease_seconds: float = 300.0
 
 
-class SubmitRequest(Call):
-    """A leader submitting the result it computed."""
+class SubmitRequest(Ref):
+    """A leader submitting the result it computed, with an optional freshness ttl."""
 
-    result: Any
+    result: Any = None
+    ttl: float | None = None
+
+
+class ClearRequest(BaseModel):
+    """A request to clear the store, all of it or one namespace."""
+
+    namespace: str | None = None
+
+
+class EvictRequest(BaseModel):
+    """A request to prune the store by age and/or a size cap."""
+
+    max_entries: int | None = None
+    older_than: float | None = None
+
+
+def _resolve_key(ref: Ref) -> str:
+    """Return the ledger key for a reference, hashing the payload when needed.
+
+    Parameters
+    ----------
+    ref : Ref
+        A request carrying either ``key`` or ``namespace`` (with optional
+        ``payload``).
+
+    Returns
+    -------
+    str
+        The ledger key.
+
+    Raises
+    ------
+    fastapi.HTTPException
+        With status 422 when neither a key nor a namespace was given.
+    """
+    if ref.key:
+        return ref.key
+    if ref.namespace is not None:
+        return make_key(ref.namespace, ref.payload)
+    raise HTTPException(status_code=422, detail="provide 'key', or 'namespace' with an optional 'payload'")
 
 
 def create_app(ledger: SqliteLedger | None = None) -> FastAPI:
@@ -73,8 +119,8 @@ def create_app(ledger: SqliteLedger | None = None) -> FastAPI:
     ----------
     ledger : wallet_helper.sqlite_ledger.SqliteLedger, optional
         The shared store. Defaults to a :class:`SqliteLedger` at the standard
-        location. A SQLite backend is required because the claim/submit lease
-        relies on its atomic transactions.
+        location. A SQLite backend is required because the claim lease relies on
+        its atomic transactions.
 
     Returns
     -------
@@ -82,6 +128,7 @@ def create_app(ledger: SqliteLedger | None = None) -> FastAPI:
         The configured application.
     """
     store = ledger if ledger is not None else SqliteLedger()
+    osh.info(f"wallet-helper server backed by {store.location}")
     app = FastAPI(title="wallet-helper", version=__version__)
 
     @app.get("/health")
@@ -90,35 +137,40 @@ def create_app(ledger: SqliteLedger | None = None) -> FastAPI:
         return {"status": "ok", "version": __version__, "ledger": store.location}
 
     @app.get("/stats")
-    def stats() -> dict:
+    def stats(namespace: str | None = None) -> dict:
         """Return how many results are cached and how often they were reused."""
-        return store.stats()
+        return store.stats(namespace)
 
     @app.post("/key")
-    def key(call: Call) -> dict:
-        """Return the content-addressed key for a namespace and payload."""
-        return {"key": make_key(call.namespace, call.payload)}
+    def key(ref: Ref) -> dict:
+        """Return the content-addressed key for a reference."""
+        return {"key": _resolve_key(ref)}
 
     @app.post("/claim")
     def claim(req: ClaimRequest) -> dict:
         """Get the cached result, or lease the right to compute it (see module doc)."""
-        k = make_key(req.namespace, req.payload)
-        outcome = store.claim(k, lease_seconds=req.lease_seconds)
-        return {"key": k, **outcome}
+        k = _resolve_key(req)
+        return {"key": k, **store.claim(k, lease_seconds=req.lease_seconds)}
 
     @app.post("/submit")
     def submit(req: SubmitRequest) -> dict:
         """Store a leader's result and release its lease."""
-        k = make_key(req.namespace, req.payload)
-        store.submit(k, req.result)
+        k = _resolve_key(req)
+        store.submit(k, req.result, ttl=req.ttl)
         return {"key": k, "stored": True}
 
     @app.post("/release")
-    def release(call: Call) -> dict:
+    def release(ref: Ref) -> dict:
         """Drop a lease without a result, so a waiter can take over."""
-        k = make_key(call.namespace, call.payload)
+        k = _resolve_key(ref)
         store.release(k)
         return {"key": k, "released": True}
+
+    @app.post("/extend")
+    def extend(ref: Ref) -> dict:
+        """Renew a lease so a long-running job is not treated as abandoned."""
+        k = _resolve_key(ref)
+        return {"key": k, "extended": store.extend(k)}
 
     @app.get("/result/{key}")
     async def result(key: str, wait: float = 0.0, poll: float = 0.1) -> dict:
@@ -138,6 +190,20 @@ def create_app(ledger: SqliteLedger | None = None) -> FastAPI:
                 raise HTTPException(status_code=404, detail=f"no result for key {key!r} yet")
             await asyncio.sleep(poll)
             waited += poll
+
+    @app.post("/clear")
+    def clear(req: ClearRequest) -> dict:
+        """Delete cached results, all of them or one namespace."""
+        store.clear(req.namespace)
+        osh.info(f"cleared {'all' if req.namespace is None else req.namespace} on {store.location}")
+        return {"cleared": True}
+
+    @app.post("/evict")
+    def evict(req: EvictRequest) -> dict:
+        """Prune the store by age and/or a size cap; report how many were removed."""
+        removed = store.evict(max_entries=req.max_entries, older_than=req.older_than)
+        osh.info(f"evicted {removed} entries from {store.location}")
+        return {"removed": removed}
 
     return app
 

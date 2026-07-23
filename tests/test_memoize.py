@@ -12,11 +12,28 @@ import pytest
 
 from wallet_helper.guard import Wallet, memoize
 from wallet_helper.ledger import Ledger
+from wallet_helper.sqlite_ledger import SqliteLedger
 
 
 @pytest.fixture()
 def wallet(tmp_path: Path) -> Wallet:
     return Wallet(Ledger(tmp_path))
+
+
+def test_memoize_over_sqlite_dedups(tmp_path: Path) -> None:
+    # A claim-capable backend routes through the lease, but the surface is the same.
+    wallet = Wallet(SqliteLedger(tmp_path / "ledger.db"))
+    runs = 0
+
+    @memoize(wallet=wallet)
+    def cube(n: int) -> int:
+        nonlocal runs
+        runs += 1
+        return n ** 3
+
+    assert cube(3) == 27
+    assert cube(3) == 27  # served from the shared store
+    assert runs == 1
 
 
 def test_bare_decorator_dedups(wallet: Wallet) -> None:

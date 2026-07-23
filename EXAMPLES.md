@@ -10,7 +10,10 @@ temporary store, so you can paste it into a REPL and watch it work.
 - [5. Single-flight across threads](#5-single-flight-across-threads)
 - [6. A shared store with SQLite](#6-a-shared-store-with-sqlite)
 - [7. Cross-process single-flight over HTTP](#7-cross-process-single-flight-over-http)
-- [8. Command line](#8-command-line)
+- [8. A shared store over HTTP with RemoteLedger](#8-a-shared-store-over-http-with-remoteledger)
+- [9. Time-to-live and eviction](#9-time-to-live-and-eviction)
+- [10. Stale-while-revalidate](#10-stale-while-revalidate)
+- [11. Command line](#11-command-line)
 
 ## 1. Memoize a heavy call
 
@@ -188,9 +191,77 @@ print(get_or_run("transcribe", {"file": "a.wav"}, lambda: {"text": "hello"}))
 ```
 
 Followers can also block on one call with `GET /result/{key}?wait=SECONDS`, which
-long-polls until the leader's result lands.
+long-polls until the leader's result lands. For a long job, the leader keeps its
+lease alive with `POST /extend` (or, in-process, the `SqliteLedger.heartbeat`
+context manager).
 
-## 8. Command line
+## 8. A shared store over HTTP with RemoteLedger
+
+`RemoteLedger` is a store backed by that server, so you get cross-process
+single-flight with no protocol code: hand it to a `Wallet` and use `@memoize` as
+usual. Every host that points at the same server dedups against the same lease.
+It uses only the standard library.
+
+```python
+from wallet_helper import Wallet, RemoteLedger, memoize
+
+wallet = Wallet(RemoteLedger("http://cache.internal:8000"))
+
+@memoize(wallet=wallet)
+def transcribe(path):
+    return call_some_paid_api(path)   # runs once across the whole fleet
+
+transcribe("meeting.wav")
+```
+
+## 9. Time-to-live and eviction
+
+Give an entry a freshness window with `ttl` (seconds). After it expires, the next
+call recomputes. Prune the store with `evict`, which always drops expired entries
+and can also cap by age or count.
+
+```python
+import os_helper as osh
+from wallet_helper import Wallet, Ledger
+
+with osh.temporary_folder() as tmp:
+    ledger = Ledger(tmp)
+    wallet = Wallet(ledger)
+
+    wallet.call("price", {"sym": "ACME"}, lambda: 100, ttl=3600)   # fresh for an hour
+
+    ledger.put("old", 1, ttl=0.0)                 # already expired
+    print(ledger.evict())                          # 1   -> removed the expired entry
+    print(ledger.evict(max_entries=10))            # keep only the newest 10
+    print(ledger.evict(older_than=86400))          # drop entries older than a day
+```
+
+## 10. Stale-while-revalidate
+
+For the in-process store, serve a stale result immediately and refresh it in the
+background, so a caller never waits on the recompute.
+
+```python
+import os_helper as osh
+import time
+from wallet_helper import Wallet, Ledger
+
+with osh.temporary_folder() as tmp:
+    wallet = Wallet(Ledger(tmp))
+    version = [0]
+
+    def build():
+        version[0] += 1
+        return version[0]
+
+    print(wallet.call("cfg", {}, build, ttl=0.05))   # (1, False)  -> computed
+    time.sleep(0.06)                                   # let it expire
+    print(wallet.call("cfg", {}, build, ttl=0.05, stale_while_revalidate=True))  # (1, True) stale now
+    time.sleep(0.2)                                    # background refresh runs
+    print(wallet.call("cfg", {}, build, ttl=100))     # (2, True)   -> refreshed value
+```
+
+## 11. Command line
 
 Inspect and manage the store. Two interchangeable tools ship: the argparse one
 (always available) and a click variant (the `[cli]` extra). Point either at a
@@ -200,7 +271,9 @@ JSON directory with `--dir` or a SQLite file with `--sqlite`.
 python -m wallet_helper.cli_argparse stats            # entries and calls saved
 python -m wallet_helper.cli_argparse path              # where the store lives
 python -m wallet_helper.cli_argparse clear             # empty the store
+python -m wallet_helper.cli_argparse evict --older-than 604800   # drop entries older than a week
 
 wallet-helper-click --sqlite ./ledger.db stats         # inspect a SQLite store
+wallet-helper-click evict --max-entries 1000           # keep only the newest 1000
 wallet-helper-click clear --yes                        # skip the confirmation prompt
 ```
