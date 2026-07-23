@@ -12,6 +12,8 @@ By [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui)
 
 ## Documentation
 
+[💻 Documentation](https://harchaoui.org/warith/ai-helpers/docs/wallet-helper-doc/)
+
 [📋 Examples](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md)
 
 [🔭 Landscape](https://github.com/warith-harchaoui/wallet-helper/blob/main/LANDSCAPE.md)

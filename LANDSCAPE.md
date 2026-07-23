@@ -48,6 +48,9 @@ Rated ⭐ (absent or poor) to ⭐⭐⭐⭐⭐ (best in class) per column.
 | AWS Powertools Idempotency | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐ | ⭐ |
 | Stripe idempotency keys | ⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐ | ⭐ |
 | `litellm` cache | ⭐⭐⭐⭐ | ⭐ | ⭐ | ⭐⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐ | ⭐ |
+| `cashews` | ⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ |
+| `cacheme` | ⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐ | ⭐⭐ |
+| GPTCache (semantic) | ⭐⭐⭐⭐ | ⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
 
 ## Pros and cons
 
@@ -64,6 +67,22 @@ Rated ⭐ (absent or poor) to ⭐⭐⭐⭐⭐ (best in class) per column.
 | AWS Powertools Idempotency | Robust INPROGRESS lease; delete-on-failure; expiry; battle-tested. | Needs DynamoDB or redis; followers reject-and-retry rather than wait; AWS-centric. |
 | Stripe idempotency keys | Industry standard; replays completed results; rejects concurrent duplicates. | Remote and account-bound; HTTP only; caller must manage keys. |
 | `litellm` cache | Caching plus provider features for LLMs. | LLM only; large dependency; no content-addressing of arbitrary inputs. |
+| `cashews` | Modern async-first decorator cache; TTL/key templates; built-in stampede protection (`lock=True`, early recompute); memory / disk / redis backends. | Async-only; keys on args/templates, not input file content; the distributed lock (cross-process) needs redis, so "local" and "cross-process" are not both true at once. |
+| `cacheme` | Asyncio cache framework with strong thundering-herd (single-flight) protection; typed nodes; pluggable storage (in-memory TLRU, redis, mongo). | Async-only; keys on node args, not input content; cross-process needs redis/mongo; no self-contained local cross-process path. |
+| GPTCache (semantic) | Different axis: matches *similar* prompts via embeddings + vector search, so paraphrases hit — the semantic caching wallet-helper deliberately does not do. | LLM-oriented; needs an embedder and a vector store; probabilistic hits (a similarity threshold) rather than exact, content-addressed reuse. |
+
+## Two things wallet-helper is not
+
+- **Not a semantic cache.** GPTCache and similar tools match *similar* prompts
+  via embeddings and a similarity threshold, trading exactness for a higher hit
+  rate on paraphrases. wallet-helper is the opposite by design: an exact,
+  content-addressed hit or a miss, with no model in the loop. The two are
+  complementary, not competing.
+- **Not an HTTP-protocol cache.** `requests-cache` and the newer
+  [hishel](https://github.com/karpetrosyan/hishel) (RFC 9111 caching for HTTPX)
+  cache HTTP responses by their cache-control semantics. wallet-helper caches
+  *any* function's result by the content of its inputs, so it also covers a slow
+  local model or a non-HTTP call — but it does not read HTTP cache headers.
 
 ## Ideas borrowed
 

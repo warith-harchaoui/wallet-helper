@@ -4,6 +4,18 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [0.2.2] - 2026-07-23
+
+### Documentation
+- Added a hosted **Documentation** link (Sphinx API docs on the AI Helpers site)
+  to the README and LISEZMOI, matching the other suite helpers.
+- Refreshed `LANDSCAPE.md` against the current ecosystem: added the async-first
+  decorator caches `cashews` and `cacheme` (both with built-in stampede/single-
+  flight protection but redis-bound for the cross-process case), and the
+  semantic LLM cache GPTCache; added a "Two things wallet-helper is not" section
+  distinguishing exact content-addressed reuse from semantic matching and from
+  HTTP-protocol caches (`requests-cache`, `hishel`). Docs-only; no code change.
+
 ## [0.2.1] - 2026-07-23
 
 ### Documentation
