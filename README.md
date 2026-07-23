@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml) [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/warith-harchaoui/wallet-helper/blob/main/LICENSE) [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](#) [![Local-first](https://img.shields.io/badge/privacy-local--first-2f6f5e.svg)](#the-promise)
 
-![wallet-helper Logo](assets/logo.png)
+![wallet-helper Logo](https://raw.githubusercontent.com/warith-harchaoui/wallet-helper/main/assets/logo.png)
 
 Never run the same heavy call twice. wallet-helper is persistent memoization for expensive calls (a paid API request, a slow model, any heavy function): an identical call is served from a local store instead of running again, across process restarts. When two identical calls start at the same time, they collapse into one, so the second waits for the first and reuses its result instead of running in parallel (single-flight).
 
@@ -177,4 +177,4 @@ here is the honest, case-by-case reality:
 
 ## License
 
-`wallet-helper` is licensed under **BSD-3-Clause**. See [LICENSE](LICENSE).
+`wallet-helper` is licensed under **BSD-3-Clause**. See [LICENSE](https://github.com/warith-harchaoui/wallet-helper/blob/main/LICENSE).

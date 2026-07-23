@@ -4,6 +4,13 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [0.2.1] - 2026-07-23
+
+### Documentation
+- Use **absolute URLs** for the logo image and the LICENSE link in the README
+  and LISEZMOI, so they render on the PyPI project page (PyPI does not resolve
+  repo-relative paths, unlike GitHub). Docs-only; no code change.
+
 ## [0.2.0] - 2026-07-23
 
 This release refocuses wallet-helper on one job: never run the same heavy call

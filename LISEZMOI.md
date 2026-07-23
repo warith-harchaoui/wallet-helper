@@ -4,7 +4,7 @@
 
 [![CI](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml) [![Licence : BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/warith-harchaoui/wallet-helper/blob/main/LICENSE) [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](#) [![Local-first](https://img.shields.io/badge/privacy-local--first-2f6f5e.svg)](#la-promesse)
 
-![wallet-helper Logo](assets/logo.png)
+![wallet-helper Logo](https://raw.githubusercontent.com/warith-harchaoui/wallet-helper/main/assets/logo.png)
 
 `wallet-helper` fait partie d'une collection de bibliothèques nommée **AI Helpers**, développée pour construire de l'intelligence artificielle.
 
@@ -181,4 +181,4 @@ cas par cas :
 
 ## Licence
 
-`wallet-helper` est distribué sous licence **BSD-3-Clause**. Voir [LICENSE](LICENSE).
+`wallet-helper` est distribué sous licence **BSD-3-Clause**. Voir [LICENSE](https://github.com/warith-harchaoui/wallet-helper/blob/main/LICENSE).
