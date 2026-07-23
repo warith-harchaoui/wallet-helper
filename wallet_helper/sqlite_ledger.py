@@ -21,9 +21,11 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from wallet_helper.ledger import _DEFAULT_DIR
 
@@ -178,28 +180,24 @@ class SqliteLedger:
             :meth:`submit`), or ``{"status": "pending"}`` if another caller is
             computing it (wait and claim again).
         """
-        record = self.get_record(key)
-        if record is not None:
-            self.register_hit(key)
-            return {"status": "hit", "result": record["result"]}
-
         conn = self._connect()
         conn.isolation_level = None  # take explicit control of the transaction
         try:
             # BEGIN IMMEDIATE grabs the write lock now, so the check-then-lease
             # below cannot race another process doing the same.
             conn.execute("BEGIN IMMEDIATE")
-            row = conn.execute("SELECT result FROM entries WHERE key = ?", (key,)).fetchone()
-            if row is not None:
-                conn.execute("COMMIT")
-                self.register_hit(key)
-                return {"status": "hit", "result": json.loads(row[0])}
             now = time.time()
+            row = conn.execute("SELECT result, expires_at FROM entries WHERE key = ?", (key,)).fetchone()
+            if row is not None and (row[1] is None or now < row[1]):
+                # A fresh entry: reuse it. An expired one falls through to re-lease.
+                conn.execute("UPDATE entries SET hits = hits + 1 WHERE key = ?", (key,))
+                conn.execute("COMMIT")
+                return {"status": "hit", "result": json.loads(row[0])}
             lease = conn.execute("SELECT leased_at FROM pending WHERE key = ?", (key,)).fetchone()
             if lease is not None and (now - lease[0]) < lease_seconds:
                 conn.execute("COMMIT")
                 return {"status": "pending"}
-            # No entry and no live lease: grant one, stealing a stale lease too.
+            # No fresh entry and no live lease: grant one, stealing a stale lease too.
             conn.execute(
                 "INSERT INTO pending (key, leased_at) VALUES (?, ?) "
                 "ON CONFLICT(key) DO UPDATE SET leased_at = excluded.leased_at",
@@ -210,9 +208,9 @@ class SqliteLedger:
         finally:
             conn.close()
 
-    def submit(self, key: str, result: Any) -> dict:
+    def submit(self, key: str, result: Any, *, ttl: float | None = None) -> dict:
         """Store a leader's result and release its lease; return the record."""
-        self.put(key, result)
+        self.put(key, result, ttl=ttl)
         with self._connect() as conn:
             conn.execute("DELETE FROM pending WHERE key = ?", (key,))
         return self.get_record(key)
@@ -221,3 +219,74 @@ class SqliteLedger:
         """Drop a lease without storing a result, so a waiter can take over."""
         with self._connect() as conn:
             conn.execute("DELETE FROM pending WHERE key = ?", (key,))
+
+    def extend(self, key: str) -> bool:
+        """Renew a lease so a long job is not treated as abandoned.
+
+        A leader running work longer than ``lease_seconds`` calls this (directly
+        or through :meth:`heartbeat`) to reset the lease clock, so waiters do not
+        steal leadership from a job that is still making progress.
+
+        Returns
+        -------
+        bool
+            ``True`` if a lease existed and was renewed, ``False`` otherwise.
+        """
+        with self._connect() as conn:
+            cur = conn.execute("UPDATE pending SET leased_at = ? WHERE key = ?", (time.time(), key))
+        return cur.rowcount > 0
+
+    @contextmanager
+    def heartbeat(self, key: str, *, interval: float = 60.0) -> Iterator[None]:
+        """Renew ``key``'s lease every ``interval`` seconds for the duration of a block.
+
+        Wrap a long computation in this so its lease never lapses:
+
+        >>> import os_helper as osh
+        >>> with osh.temporary_folder() as tmp:
+        ...     lg = SqliteLedger(tmp + "/ledger.db")
+        ...     _ = lg.claim("job_1")
+        ...     with lg.heartbeat("job_1", interval=0.05):
+        ...         result = 6 * 7            # a long job, kept alive meanwhile
+        ...     _ = lg.submit("job_1", result)
+        ...     lg.get("job_1")
+        42
+        """
+        stop = threading.Event()
+
+        def _renew() -> None:
+            # Ping until the block exits; wait() returns True only when stopped.
+            while not stop.wait(interval):
+                self.extend(key)
+
+        thread = threading.Thread(target=_renew, daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            thread.join(timeout=interval)
+
+    def evict(self, *, max_entries: int | None = None, older_than: float | None = None) -> int:
+        """Prune entries and return how many were removed.
+
+        Expired entries are always removed. With ``older_than``, entries created
+        more than that many seconds ago go too. With ``max_entries``, only the
+        newest ``max_entries`` by creation time are kept.
+        """
+        now = time.time()
+        with self._connect() as conn:
+            before = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+            conn.execute("DELETE FROM entries WHERE expires_at IS NOT NULL AND expires_at <= ?", (now,))
+            if older_than is not None:
+                conn.execute("DELETE FROM entries WHERE created_at < ?", (now - older_than,))
+            if max_entries is not None:
+                # Keep the newest max_entries; delete anything ranked below them.
+                conn.execute(
+                    "DELETE FROM entries WHERE key NOT IN ("
+                    "  SELECT key FROM entries ORDER BY created_at DESC LIMIT ?"
+                    ")",
+                    (max_entries,),
+                )
+            after = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
+        return before - after

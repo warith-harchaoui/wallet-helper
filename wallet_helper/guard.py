@@ -8,6 +8,13 @@ run is expensive (a paid API request, a slow model, any heavy function) so that:
 2. two identical calls made at the same time collapse into one: the second waits
    for the first and reuses its result instead of running again (single-flight).
 
+Single-flight works in-process for the default :class:`~wallet_helper.ledger.Ledger`
+(via threading), and across processes for any backend that offers a claim lease
+(:class:`~wallet_helper.sqlite_ledger.SqliteLedger`, or
+:class:`~wallet_helper.remote.RemoteLedger` over HTTP). Wallet picks the right
+path automatically, so ``Wallet(SqliteLedger(...))`` and
+``Wallet(RemoteLedger(url))`` get cross-process dedup with no extra code.
+
 The :func:`memoize` decorator wires that onto a function in one line, using a
 shared default wallet, so the common case needs no setup.
 
@@ -34,10 +41,13 @@ from __future__ import annotations
 
 import inspect
 import threading
+import time
 from functools import wraps
 from typing import Any, Callable
 
-from wallet_helper.ledger import Ledger, LedgerLike, make_key
+import os_helper as osh
+
+from wallet_helper.ledger import Ledger, LedgerLike, is_fresh, make_key
 
 
 def _payload_from_args(fn: Callable, args: tuple, kwargs: dict, ignore: tuple[str, ...]) -> Any:
@@ -61,26 +71,39 @@ def _payload_from_args(fn: Callable, args: tuple, kwargs: dict, ignore: tuple[st
 
 
 class Wallet:
-    """A ledger plus in-process single-flight around heavy calls.
+    """A ledger plus single-flight around heavy calls.
 
     Parameters
     ----------
     ledger : wallet_helper.ledger.LedgerLike, optional
         The result store, any backend satisfying
-        :class:`~wallet_helper.ledger.LedgerLike` (the default JSON
-        :class:`~wallet_helper.ledger.Ledger`, or a
-        :class:`~wallet_helper.sqlite_ledger.SqliteLedger`). A default
-        :class:`Ledger` is created when omitted.
+        :class:`~wallet_helper.ledger.LedgerLike`. With the default JSON
+        :class:`~wallet_helper.ledger.Ledger`, single-flight is in-process. With
+        a claim-capable backend (:class:`~wallet_helper.sqlite_ledger.SqliteLedger`
+        or :class:`~wallet_helper.remote.RemoteLedger`) it is cross-process. A
+        default :class:`Ledger` is created when omitted.
+    poll_interval : float, optional
+        How often a waiter re-checks a claim-based backend while another caller
+        computes a key. Defaults to 0.05 s.
     """
 
-    def __init__(self, ledger: LedgerLike | None = None) -> None:
+    def __init__(self, ledger: LedgerLike | None = None, poll_interval: float = 0.05) -> None:
         self.ledger: LedgerLike = ledger if ledger is not None else Ledger()
-        # Single-flight registry: key -> Event that the in-flight leader sets when
-        # done, so concurrent identical callers wait instead of running again.
+        self._poll_interval = poll_interval
+        # In-process single-flight registry (used for the default Ledger): key ->
+        # Event the leader sets when done, so concurrent callers wait, not run.
         self._inflight: dict[str, threading.Event] = {}
         self._inflight_lock = threading.Lock()
 
-    def call(self, namespace: str, key_payload: Any, fn: Callable[[], Any]) -> tuple[Any, bool]:
+    def call(
+        self,
+        namespace: str,
+        key_payload: Any,
+        fn: Callable[[], Any],
+        *,
+        ttl: float | None = None,
+        stale_while_revalidate: bool = False,
+    ) -> tuple[Any, bool]:
         """Return a cached result, or run ``fn`` once and store it.
 
         Parameters
@@ -93,6 +116,13 @@ class Wallet:
         fn : callable
             Zero-argument callable doing the heavy work, run at most once per key
             even under concurrency.
+        ttl : float, optional
+            Seconds the stored result stays fresh. After it expires the next call
+            recomputes. ``None`` (default) means it never expires.
+        stale_while_revalidate : bool, optional
+            Only for the in-process :class:`~wallet_helper.ledger.Ledger`. When an
+            entry is expired, return the stale result at once and refresh it in a
+            background thread, so callers never wait on the recompute.
 
         Returns
         -------
@@ -102,13 +132,27 @@ class Wallet:
             nothing, so a failed call is never cached.
         """
         key = make_key(namespace, key_payload)
+        if hasattr(self.ledger, "claim"):
+            # Claim-capable backend: single-flight across processes and threads.
+            return self._call_via_claim(key, fn, ttl)
+        return self._call_local(key, fn, ttl, stale_while_revalidate)
+
+    def _call_local(self, key: str, fn: Callable[[], Any], ttl: float | None, swr: bool) -> tuple[Any, bool]:
+        """In-process path for the default Ledger: freshness, then single-flight."""
         record = self.ledger.get_record(key)
-        if record is not None:
+        if record is not None and is_fresh(record):
             self.ledger.register_hit(key)
             return record["result"], True
+        if record is not None and swr:
+            # Expired but allowed to be served stale: return it now, refresh once
+            # in the background so no caller pays the recompute latency.
+            self.ledger.register_hit(key)
+            self._spawn_refresh(key, fn, ttl)
+            return record["result"], True
+        return self._compute_local(key, fn, ttl)
 
-        # Miss. Coalesce concurrent identical misses: exactly one caller (the
-        # leader) runs fn; the rest wait for it and then read the stored result.
+    def _compute_local(self, key: str, fn: Callable[[], Any], ttl: float | None) -> tuple[Any, bool]:
+        """Run ``fn`` once for ``key`` with in-process single-flight (leader/follower)."""
         while True:
             with self._inflight_lock:
                 event = self._inflight.get(key)
@@ -121,21 +165,53 @@ class Wallet:
                 # A follower: wait for the leader, then reuse its stored result.
                 event.wait()
                 record = self.ledger.get_record(key)
-                if record is not None:
+                if record is not None and is_fresh(record):
                     self.ledger.register_hit(key)
                     return record["result"], True
-                # Leader failed or stored nothing; retry as a fresh contender.
+                # Leader failed or stored nothing fresh; retry as a contender.
                 continue
 
             # We are the leader: do the real work exactly once.
             try:
                 result = fn()  # if this raises, we store nothing and re-raise
-                self.ledger.put(key, result)
+                self.ledger.put(key, result, ttl=ttl)
                 return result, False
             finally:
                 with self._inflight_lock:
                     self._inflight.pop(key, None)
                 event.set()  # wake any followers waiting on this key
+
+    def _spawn_refresh(self, key: str, fn: Callable[[], Any], ttl: float | None) -> None:
+        """Recompute ``key`` in a daemon thread, at most one refresh at a time."""
+        with self._inflight_lock:
+            if key in self._inflight:
+                return  # a compute or refresh is already running for this key
+
+        def _run() -> None:
+            try:
+                self._compute_local(key, fn, ttl)
+            except Exception as exc:  # a background failure must not crash anyone
+                osh.warning(f"background refresh for {key} failed: {exc}")
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _call_via_claim(self, key: str, fn: Callable[[], Any], ttl: float | None) -> tuple[Any, bool]:
+        """Cross-process path: claim the key, compute if leader, else wait for it."""
+        while True:
+            outcome = self.ledger.claim(key)
+            status = outcome["status"]
+            if status == "hit":
+                return outcome["result"], True
+            if status == "leased":
+                try:
+                    result = fn()
+                except BaseException:
+                    self.ledger.release(key)  # let a waiter take over on failure
+                    raise
+                self.ledger.submit(key, result, ttl=ttl)
+                return result, False
+            # pending: another caller is computing it; wait and try again.
+            time.sleep(self._poll_interval)
 
     def paid(
         self,
@@ -143,6 +219,8 @@ class Wallet:
         *,
         key: Callable[..., Any] | None = None,
         ignore: tuple[str, ...] = (),
+        ttl: float | None = None,
+        stale_while_revalidate: bool = False,
     ) -> Callable:
         """Decorator memoizing a function through this wallet.
 
@@ -157,6 +235,11 @@ class Wallet:
             Parameter names to exclude from the cache key, the tidy alternative
             to a ``key=`` lambda when you just need to drop a volatile handle
             (for example ``ignore=("client",)``).
+        ttl : float, optional
+            Seconds the stored result stays fresh (see :meth:`call`).
+        stale_while_revalidate : bool, optional
+            Serve a stale result and refresh in the background (in-process Ledger
+            only; see :meth:`call`).
 
         Returns
         -------
@@ -185,7 +268,13 @@ class Wallet:
             @wraps(fn)
             def wrapper(*args: Any, **kwargs: Any) -> Any:
                 payload = key(*args, **kwargs) if key is not None else _payload_from_args(fn, args, kwargs, ignore)
-                result, _ = self.call(namespace, payload, lambda: fn(*args, **kwargs))
+                result, _ = self.call(
+                    namespace,
+                    payload,
+                    lambda: fn(*args, **kwargs),
+                    ttl=ttl,
+                    stale_while_revalidate=stale_while_revalidate,
+                )
                 return result
 
             # lru_cache-style introspection and eviction, scoped to this namespace.
@@ -222,6 +311,8 @@ def memoize(
     namespace: str | None = None,
     key: Callable[..., Any] | None = None,
     ignore: tuple[str, ...] = (),
+    ttl: float | None = None,
+    stale_while_revalidate: bool = False,
     wallet: Wallet | None = None,
 ) -> Callable:
     """Persistent memoization: a cache that survives restarts, plus single-flight.
@@ -229,7 +320,7 @@ def memoize(
     Drop it on any function and its results are content-addressed to disk,
     reused across process restarts, and shared between concurrent callers so the
     same heavy call never runs twice. Works bare (``@memoize``) or configured
-    (``@memoize(namespace="asr", ignore=("client",))``).
+    (``@memoize(ttl=3600, ignore=("client",))``).
 
     Parameters
     ----------
@@ -242,6 +333,10 @@ def memoize(
         Custom key builder ``key(*args, **kwargs)``.
     ignore : tuple of str, optional
         Parameter names to exclude from the key.
+    ttl : float, optional
+        Seconds the stored result stays fresh.
+    stale_while_revalidate : bool, optional
+        Serve a stale result and refresh in the background (in-process store only).
     wallet : Wallet, optional
         The wallet to use; defaults to the shared :func:`default_wallet`.
 
@@ -266,7 +361,7 @@ def memoize(
     def make(func: Callable) -> Callable:
         ns = namespace or f"{func.__module__}.{func.__qualname__}"
         w = wallet or default_wallet()
-        return w.paid(ns, key=key, ignore=ignore)(func)
+        return w.paid(ns, key=key, ignore=ignore, ttl=ttl, stale_while_revalidate=stale_while_revalidate)(func)
 
     # Support both @memoize and @memoize(...): a bare call passes the function.
     return make(fn) if callable(fn) else make
