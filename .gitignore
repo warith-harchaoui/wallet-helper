@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+.venv/
+CODING.md
+.paid_cache/
+.wallet_cache/
+
+# Private working folder — session notes, scratch, todo tracker. Never committed.
+.private/
+
+# Stray dir created by the deepeval pytest plugin if present in the environment.
+.deepeval/
+.deepeval_telemetry.txt

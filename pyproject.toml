@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wallet-helper"
+version = "0.1.0"
+description = "Wallet Helper — never pay twice for the same billable call. A tiny, local-first, provider-agnostic guard combining content-addressed idempotency caching, per-call cost accounting and budget ceilings, for any paid API or metered function in any currency."
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+license = { text = "BSD-3-Clause" }
+authors = [
+    { name = "Warith HARCHAOUI", email = "warithmetics@deraison.ai" },
+]
+keywords = ["cache", "idempotency", "cost", "budget", "api", "billing", "memoize", "wallet"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+    "Topic :: Office/Business :: Financial",
+]
+# Zero runtime dependencies on purpose: a wallet guard should be safe to drop
+# into any project without dragging a dependency tree. Stdlib only.
+dependencies = []
+
+[project.optional-dependencies]
+# Every surface beyond the core is an opt-in extra, so `pip install wallet-helper`
+# stays stdlib-only. Install just the surface you need.
+# CLI-with-click variant (the argparse CLI needs no runtime dep and is always
+# available as `python -m wallet_helper.cli_argparse`).
+cli = ["click>=8.1,<9"]
+# FastAPI HTTP surface + minimal /gui dashboard.
+api = ["fastapi>=0.110", "uvicorn>=0.29"]
+# Model Context Protocol tool set.
+mcp = ["mcp>=1.2"]
+# httpx powers FastAPI's TestClient, exercised by the api tests.
+dev = ["pytest>=8", "ruff>=0.6", "httpx>=0.27"]
+
+[project.scripts]
+wallet-helper = "wallet_helper.cli_argparse:main"
+wallet-helper-click = "wallet_helper.cli_click:main"
+wallet-helper-mcp = "wallet_helper.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/warith-harchaoui/wallet-helper"
+
+[tool.setuptools.packages.find]
+include = ["wallet_helper*"]
+
+[tool.pytest.ini_options]
+# Run the docstring Examples as tests too, so every ">>>" in the code stays
+# true. Optional-surface modules whose deps may be absent are skipped by
+# tests/conftest.py's collect_ignore.
+addopts = "--doctest-modules"
+testpaths = ["tests", "wallet_helper"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I", "D204", "D209", "D403"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]

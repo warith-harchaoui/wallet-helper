@@ -1,0 +1,13 @@
+# Runtime dependencies for wallet-helper.
+#
+# The core library is intentionally ZERO-dependency (Python standard library
+# only) so a wallet guard can drop into any project without dragging a tree of
+# transitive packages. There is deliberately nothing to install here for the
+# `from wallet_helper import Wallet, Ledger, Budget` core.
+#
+# Optional surfaces live behind extras in pyproject.toml (install as needed):
+#   pip install "wallet-helper[cli]"   # click CLI variant  -> click
+#   pip install "wallet-helper[api]"   # FastAPI HTTP + GUI  -> fastapi, uvicorn
+#   pip install "wallet-helper[mcp]"   # MCP tool set        -> mcp
+#
+# Dev/test tools (pytest, ruff, httpx) live in requirements-dev.txt.
