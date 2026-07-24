@@ -4,6 +4,21 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [0.3.0] - 2026-07-24
+
+### Added
+- **Content-address file arguments wherever they appear.** A file path is now
+  keyed by the file's bytes even when it is one argument among several, not only
+  when it is the whole payload. Two identical files reached by different paths
+  (a rename, or a byte-for-byte copy in another folder) share a single cache
+  entry, and two different files never collide even if their names look alike.
+  The key builder walks the call's `{"args", "kwargs"}` structure and replaces
+  each file-path or `bytes` leaf with its os-helper content hash.
+- Path arguments are recognised as a `str` or any `os.PathLike`
+  (`pathlib.Path` and friends), resolved through `os.fspath`. `bytes` stay raw
+  content, never treated as a filesystem path. Non-file strings are untouched,
+  so a payload with no file leaves hashes exactly as before.
+
 ## [0.2.2] - 2026-07-23
 
 ### Documentation

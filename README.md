@@ -75,6 +75,13 @@ transcribe("meeting.wav")   # runs, stores the result
 transcribe("meeting.wav")   # served from the store, no second call
 ```
 
+A file argument is keyed by its content, not its path. So the same file reached under a different name, or a byte-for-byte copy in another folder, still hits, and two different files never collide even if their names look alike:
+
+```python
+transcribe("meeting.wav")          # runs
+transcribe("archive/meeting.wav")  # a copy with the same bytes, served from the store
+```
+
 Ignore an argument that should not change the result, such as a client handle:
 
 ```python

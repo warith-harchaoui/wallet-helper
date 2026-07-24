@@ -65,6 +65,47 @@ def test_ignore_drops_a_volatile_argument(wallet: Wallet) -> None:
     assert calls == 1
 
 
+def test_memoize_reuses_across_identical_files_at_different_paths(wallet: Wallet, tmp_path: Path) -> None:
+    # The point of content-addressing a file argument: two copies of the same
+    # file, at different paths, must run the heavy call only once.
+    a = tmp_path / "a" / "input.dat"
+    a.parent.mkdir()
+    a.write_bytes(b"identical-payload")
+    b = tmp_path / "b" / "renamed.dat"
+    b.parent.mkdir()
+    b.write_bytes(b"identical-payload")
+    runs = 0
+
+    @memoize(wallet=wallet)
+    def transcribe(path: Path) -> str:
+        nonlocal runs
+        runs += 1
+        return f"result-{runs}"
+
+    first = transcribe(a)
+    second = transcribe(b)  # same bytes, different path: served from cache
+    assert first == second
+    assert runs == 1
+
+
+def test_memoize_separates_different_files(wallet: Wallet, tmp_path: Path) -> None:
+    a = tmp_path / "a.dat"
+    a.write_bytes(b"first")
+    b = tmp_path / "b.dat"
+    b.write_bytes(b"second")
+    runs = 0
+
+    @memoize(wallet=wallet)
+    def transcribe(path: Path) -> int:
+        nonlocal runs
+        runs += 1
+        return runs
+
+    transcribe(a)
+    transcribe(b)  # different bytes: a real second call
+    assert runs == 2
+
+
 def test_cache_info_and_clear(wallet: Wallet) -> None:
     @memoize(namespace="thing", wallet=wallet)
     def thing(n: int) -> int:

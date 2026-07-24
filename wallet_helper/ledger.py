@@ -134,17 +134,71 @@ class LedgerLike(Protocol):
         ...
 
 
+# Markers standing in for a content hash inside a canonicalised payload. They are
+# distinctive enough that a real argument value is never mistaken for one.
+_FILE_MARK = "__wallet_helper_file_sha__:"
+_BYTES_MARK = "__wallet_helper_bytes_sha__:"
+
+
+def _file_path(value: Any) -> str | None:
+    """Return the string path if ``value`` names an existing file, else ``None``.
+
+    A path reaches us in several forms: a plain ``str``, a :class:`pathlib.Path`,
+    or any other :class:`os.PathLike` (``__fspath__``). All are accepted and
+    resolved with :func:`os.fspath`. ``bytes`` are excluded on purpose: they are
+    hashed as raw content, not treated as a filesystem path. Never raises, so an
+    arbitrary string (embedded NUL, over-long) is simply reported as not a file.
+    """
+    if isinstance(value, (bytes, bytearray)) or not isinstance(value, (str, os.PathLike)):
+        return None
+    try:
+        path = os.fspath(value)
+        if isinstance(path, bytes):
+            path = path.decode()
+        return path if osh.file_exists(path) else None
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+
+
+def _canonical(value: Any) -> Any:
+    """Replace file-path and ``bytes`` leaves with content-hash markers.
+
+    A path argument is usually one item inside a call's
+    ``{"args": ..., "kwargs": ...}`` payload, not the whole payload. Walking the
+    structure lets us key such a path by the file's *bytes* rather than its text,
+    so two identical files at different paths (or one file later renamed) share a
+    single cache entry, and two different files never collide even when their
+    paths look alike. Leaves that are neither paths nor ``bytes`` pass through
+    untouched, so a payload with no file leaves serialises exactly as before.
+    """
+    if isinstance(value, (bytes, bytearray)):
+        # latin-1 is a lossless byte to text mapping, so any bytes hash stably.
+        return _BYTES_MARK + osh.hash_string(bytes(value).decode("latin-1"))
+    path = _file_path(value)
+    if path is not None:
+        return _FILE_MARK + osh.hashfile(path)
+    if isinstance(value, dict):
+        return {k: _canonical(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonical(v) for v in value]
+    return value
+
+
 def _digest(payload: Any) -> str:
     """Return a stable content hash for a key payload.
 
     Delegates to os_helper's hashing, so wallet-helper reuses the suite's tested
-    content-addressing instead of rolling its own.
+    content-addressing instead of rolling its own. File paths are hashed by their
+    bytes wherever they appear, including nested inside a call's arguments, so an
+    identical file reached by a different path still hits the cache.
 
     Parameters
     ----------
     payload : Any
-        A path to an existing file (hashed by its bytes), raw ``bytes``, or any
-        JSON-serialisable value (hashed by its canonical key-sorted JSON).
+        A path to an existing file as a ``str`` or any :class:`os.PathLike`
+        (hashed by its bytes), raw ``bytes``, or any JSON-serialisable value.
+        Nested paths and ``bytes`` are hashed by content too; everything else is
+        hashed by its canonical key-sorted JSON.
 
     Returns
     -------
@@ -154,11 +208,13 @@ def _digest(payload: Any) -> str:
     if isinstance(payload, (bytes, bytearray)):
         # latin-1 is a lossless byte to text mapping, so any bytes hash stably.
         return osh.hash_string(bytes(payload).decode("latin-1"))
-    if isinstance(payload, (str, Path)) and osh.file_exists(str(payload)):
+    path = _file_path(payload)
+    if path is not None:
         # Hash the file by content, so a rename still hits and two files differ.
-        return osh.hashfile(str(payload))
-    # Everything else: canonical JSON, order-independent and enum-tolerant.
-    return osh.hash_string(json.dumps(payload, sort_keys=True, default=str, ensure_ascii=False))
+        return osh.hashfile(path)
+    # Everything else: canonical JSON with file and bytes leaves resolved to their
+    # content hash, order-independent and enum-tolerant.
+    return osh.hash_string(json.dumps(_canonical(payload), sort_keys=True, default=str, ensure_ascii=False))
 
 
 def is_fresh(record: dict, *, now: float | None = None) -> bool:

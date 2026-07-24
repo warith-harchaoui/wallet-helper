@@ -77,6 +77,13 @@ transcribe("reunion.wav")   # s'exécute, stocke le résultat
 transcribe("reunion.wav")   # servi depuis le stockage, pas de second appel
 ```
 
+Un argument fichier est identifié par son contenu, pas par son chemin. Le même fichier atteint sous un autre nom, ou une copie octet pour octet dans un autre dossier, fait donc mouche, et deux fichiers différents ne se télescopent jamais même si leurs noms se ressemblent :
+
+```python
+transcribe("reunion.wav")           # s'exécute
+transcribe("archive/reunion.wav")   # une copie de mêmes octets, servie depuis le stockage
+```
+
 Ignorez un argument qui ne devrait pas changer le résultat, par exemple un handle client :
 
 ```python

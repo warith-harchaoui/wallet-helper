@@ -37,6 +37,47 @@ def test_key_content_addresses_a_file(tmp_path: Path) -> None:
     assert make_key("ns", a) == make_key("ns", b"same-bytes")
 
 
+def test_key_content_addresses_a_nested_file(tmp_path: Path) -> None:
+    # A path is usually one argument among several, not the whole payload.
+    a = tmp_path / "here" / "clip.raw"
+    a.parent.mkdir()
+    a.write_bytes(b"same-bytes")
+    b = tmp_path / "there" / "other-name.raw"
+    b.parent.mkdir()
+    b.write_bytes(b"same-bytes")
+    payload_a = {"args": (str(a),), "kwargs": {"lang": "fr"}}
+    payload_b = {"args": (str(b),), "kwargs": {"lang": "fr"}}
+    # Identical files reached by different paths share one entry.
+    assert make_key("asr", payload_a) == make_key("asr", payload_b)
+
+
+def test_key_separates_nested_files_by_content(tmp_path: Path) -> None:
+    a = tmp_path / "a.raw"
+    a.write_bytes(b"alpha")
+    b = tmp_path / "b.raw"
+    b.write_bytes(b"beta")
+    ka = make_key("asr", {"args": (str(a),), "kwargs": {}})
+    kb = make_key("asr", {"args": (str(b),), "kwargs": {}})
+    assert ka != kb
+
+
+def test_nested_path_accepts_pathlike(tmp_path: Path) -> None:
+    f = tmp_path / "clip.raw"
+    f.write_bytes(b"same-bytes")
+    # A path can arrive as a str or as any os.PathLike; both key the same file.
+    as_str = make_key("asr", {"args": (str(f),), "kwargs": {}})
+    as_path = make_key("asr", {"args": (f,), "kwargs": {}})
+    assert as_str == as_path
+
+
+def test_non_file_string_is_not_content_addressed(tmp_path: Path) -> None:
+    # A plain string that is not a file must key by its text, not be mistaken
+    # for a path, so two different non-file strings stay distinct.
+    k1 = make_key("ns", {"args": ("hello.raw",), "kwargs": {}})
+    k2 = make_key("ns", {"args": ("world.raw",), "kwargs": {}})
+    assert k1 != k2
+
+
 def test_put_get_roundtrip_preserves_json(ledger: Ledger) -> None:
     payload = {"utterances": [{"speaker": "0", "text": "cafe"}], "n": [1, 2]}
     key = make_key("asr", {"file": "a.wav"})
