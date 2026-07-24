@@ -63,7 +63,7 @@ Rated ⭐ (absent or poor) to ⭐⭐⭐⭐⭐ (best in class) per column.
 
 ![Positioning map](https://raw.githubusercontent.com/warith-harchaoui/wallet-helper/main/assets/landscape.png)
 
-The map is a 2-D summary of the eight criteria, so read it as a shape, not a scoreboard. `wallet-helper` is at the top-right corner. The axes read **Horizontal — Local First ↔ Multi Client Optimized** and **Vertical — Shared Server ↔ Decorator Friendly**.
+The map is a 2-D summary of the eight criteria, so read it as a shape, not a scoreboard. `wallet-helper` is at the top-right corner. The axes read **Horizontal — Local ↔ Scalable** and **Vertical — Efficient ↔ Flexible**.
 <!-- FIGURE:END -->
 
 ## Pros and cons
