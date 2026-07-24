@@ -32,9 +32,16 @@ def test_key_content_addresses_a_file(tmp_path: Path) -> None:
     a.write_bytes(b"same-bytes")
     b = tmp_path / "renamed.raw"
     b.write_bytes(b"same-bytes")
-    # Same content hits after a rename; ascii bytes hash like the file holding them.
+    # Same content hits after a rename, whatever the path.
     assert make_key("ns", a) == make_key("ns", b)
-    assert make_key("ns", a) == make_key("ns", b"same-bytes")
+
+
+def test_file_and_raw_bytes_are_distinct_key_spaces(tmp_path: Path) -> None:
+    a = tmp_path / "clip.raw"
+    a.write_bytes(b"same-bytes")
+    # A file path and equal raw bytes are different kinds of argument, so they key
+    # differently and never alias, consistently for text and binary content alike.
+    assert make_key("ns", a) != make_key("ns", b"same-bytes")
 
 
 def test_key_content_addresses_a_nested_file(tmp_path: Path) -> None:
@@ -76,6 +83,108 @@ def test_non_file_string_is_not_content_addressed(tmp_path: Path) -> None:
     k1 = make_key("ns", {"args": ("hello.raw",), "kwargs": {}})
     k2 = make_key("ns", {"args": ("world.raw",), "kwargs": {}})
     assert k1 != k2
+
+
+def test_forged_marker_string_does_not_collide_with_a_file(tmp_path: Path) -> None:
+    # A crafted argument equal to a file marker must not alias a real file's key.
+    import os_helper as osh
+
+    from wallet_helper.ledger import _FILE_MARK
+
+    f = tmp_path / "clip.raw"
+    f.write_bytes(b"payload")
+    forged = _FILE_MARK + osh.hashfile(str(f))  # looks exactly like the marker
+    real = make_key("ns", {"args": (str(f),), "kwargs": {}})
+    crafted = make_key("ns", {"args": (forged,), "kwargs": {}})
+    assert real != crafted
+
+
+def test_pathlike_that_raises_is_treated_as_not_a_file(tmp_path: Path) -> None:
+    class Angry:
+        def __fspath__(self) -> str:
+            raise RuntimeError("no path for you")
+
+        def __repr__(self) -> str:
+            return "Angry()"  # content-bearing, so it keys by value not address
+
+    # A misbehaving os.PathLike must not crash key construction; it falls through
+    # to normal keying via its repr instead of propagating the __fspath__ error.
+    angry = Angry()
+    k1 = make_key("ns", {"args": (angry,), "kwargs": {}})
+    k2 = make_key("ns", {"args": (angry,), "kwargs": {}})
+    assert isinstance(k1, str) and k1 == k2  # no exception, stable
+
+
+def test_file_inside_a_set_is_content_addressed(tmp_path: Path) -> None:
+    a = tmp_path / "one" / "clip.raw"
+    a.parent.mkdir()
+    a.write_bytes(b"same-bytes")
+    b = tmp_path / "two" / "other.raw"
+    b.parent.mkdir()
+    b.write_bytes(b"same-bytes")
+    ka = make_key("ns", {"args": (frozenset({str(a), "tag"}),), "kwargs": {}})
+    kb = make_key("ns", {"args": (frozenset({str(b), "tag"}),), "kwargs": {}})
+    assert ka == kb  # identical file content, different path, inside a set
+
+
+def test_object_without_content_repr_is_refused_not_keyed_on_address() -> None:
+    class Handle:  # only the default object repr: <...Handle object at 0x...>
+        pass
+
+    # Keying on the address would silently never hit and bloat the store, so we
+    # refuse loudly and point the caller at ignore=/key=.
+    with pytest.raises(TypeError, match="ignore="):
+        make_key("ns", {"args": (Handle(),), "kwargs": {}})
+
+
+def test_object_with_a_content_repr_keys_stably() -> None:
+    class Point:
+        def __init__(self, x: int) -> None:
+            self.x = x
+
+        def __repr__(self) -> str:
+            return f"Point({self.x})"
+
+    k1 = make_key("ns", {"args": (Point(3),), "kwargs": {}})
+    k2 = make_key("ns", {"args": (Point(3),), "kwargs": {}})
+    assert k1 == k2  # stable, content-bearing repr
+    assert k1 != make_key("ns", {"args": (Point(4),), "kwargs": {}})
+
+
+def test_non_string_dict_keys_do_not_crash_and_stay_distinct() -> None:
+    # Tuple, bytes, and mixed int/str keys would make json.dumps raise or fail to
+    # sort; key construction must handle them deterministically instead.
+    make_key("ns", {"args": ({(1, 2): "v"},), "kwargs": {}})
+    make_key("ns", {"args": ({b"k": "v"},), "kwargs": {}})
+    k1 = make_key("ns", {"args": ({1: "a", "b": 2},), "kwargs": {}})
+    k2 = make_key("ns", {"args": ({1: "a", "b": 2},), "kwargs": {}})
+    assert k1 == k2  # deterministic
+    # An int key and a string key of the same text do not alias.
+    assert make_key("ns", {1: "v"}) != make_key("ns", {"1": "v"})
+
+
+def test_byte_like_types_are_content_addressed_and_stable() -> None:
+    # bytes, bytearray, and memoryview of the same content key identically and
+    # deterministically (no repr-with-address leaking into the key).
+    kb = make_key("ns", {"args": (b"abc",), "kwargs": {}})
+    kba = make_key("ns", {"args": (bytearray(b"abc"),), "kwargs": {}})
+    kmv = make_key("ns", {"args": (memoryview(b"abc"),), "kwargs": {}})
+    assert kb == kba == kmv
+
+
+def test_set_and_list_with_equal_members_stay_distinct() -> None:
+    # A set argument and a list argument are different kinds of value; they must
+    # not share a cache entry even when their members coincide.
+    as_set = make_key("ns", {"args": (frozenset({1, 2}),), "kwargs": {}})
+    as_list = make_key("ns", {"args": ([1, 2],), "kwargs": {}})
+    assert as_set != as_list
+
+
+def test_set_is_order_independent() -> None:
+    # Same members in a different insertion order hash the same.
+    k1 = make_key("ns", {"args": (frozenset({"a", "b", "c"}),), "kwargs": {}})
+    k2 = make_key("ns", {"args": (frozenset({"c", "a", "b"}),), "kwargs": {}})
+    assert k1 == k2
 
 
 def test_put_get_roundtrip_preserves_json(ledger: Ledger) -> None:

@@ -88,8 +88,10 @@ with osh.temporary_folder() as tmp:
 
 ## 4. Content-address a file
 
-Pass a file path (or raw `bytes`) as the payload. The key is the file's content,
-so renaming the file still hits, and two different files never collide.
+A file argument is keyed by its content, not its path, wherever it sits in the
+call. So the same file reached by a different path (a rename, or a byte-for-byte
+copy elsewhere) still hits, and two different files never collide, even when the
+path is only one argument among several:
 
 ```python
 import os_helper as osh
@@ -101,8 +103,27 @@ with osh.temporary_folder() as tmp:
     (d / "clip.wav").write_bytes(b"AUDIO-BYTES")
     (d / "renamed.wav").write_bytes(b"AUDIO-BYTES")   # same content, different name
 
+    # A whole-payload path: renaming still hits.
     print(make_key("asr", d / "clip.wav") == make_key("asr", d / "renamed.wav"))   # True
-    print(make_key("asr", d / "clip.wav") == make_key("asr", b"AUDIO-BYTES"))       # True
+
+    # A path nested among other arguments is content-addressed too.
+    a = {"args": (str(d / "clip.wav"),), "kwargs": {"lang": "en"}}
+    b = {"args": (str(d / "renamed.wav"),), "kwargs": {"lang": "en"}}
+    print(make_key("asr", a) == make_key("asr", b))                                # True
+```
+
+In practice you never build that payload yourself: `@memoize` does it for you, so
+two copies of the same file at different paths run the heavy call only once.
+
+```python
+from wallet_helper import memoize
+
+@memoize
+def transcribe(path, lang="en"):
+    return call_some_paid_api(path, lang)   # runs once for a given file + lang
+
+transcribe("clip.wav")            # runs
+transcribe("archive/clip.wav")    # same bytes, different path: served from the store
 ```
 
 ## 5. Single-flight across threads

@@ -19,6 +19,35 @@ semantic versioning.
   content, never treated as a filesystem path. Non-file strings are untouched,
   so a payload with no file leaves hashes exactly as before.
 
+### Changed
+- **One key rule at every depth.** Top-level and nested values now go through the
+  same canonicaliser, so a file path and equal raw `bytes` are consistently kept
+  in **distinct key spaces** for text and binary content alike (previously they
+  aliased only for ASCII, at the top level). This changes the computed key for a
+  payload that is a bare `bytes` object or that carries nested `bytes`; such
+  entries recompute once after upgrading.
+- Sets and frozensets are canonicalised (members content-addressed, order
+  independent) and kept distinct from a list of the same members.
+
+### Hardened
+- Key construction never raises: a misbehaving `os.PathLike` whose `__fspath__`
+  throws is treated as plain data instead of crashing the wrapped call.
+- A crafted argument string can no longer forge an internal content marker and
+  collide with a real file or bytes key (markers are NUL-prefixed and any
+  user string that resembles one is escaped).
+- Every byte-like argument (`bytes`, `bytearray`, `memoryview`) is content
+  addressed and keys deterministically, the same whatever wrapper it arrived in.
+- An argument that has only the default object representation (its `repr` would
+  embed a memory address) is now **refused with a clear error** instead of being
+  keyed on that address, which used to cause silent cache misses and a store that
+  filled with duplicate entries. Exclude such a handle with `ignore=(...)` or a
+  `key=...` builder. Values with a content-bearing `str` (`enum`, `Decimal`,
+  `datetime`, `uuid`, numpy scalars, dataclasses, ...) are unaffected.
+- Dicts with non-string keys (a tuple, `bytes`, an enum, or a mix of `int` and
+  `str`) no longer crash key construction; keys are normalised so the payload
+  always serialises and distinct keys never alias (`{1: v}` and `{"1": v}` stay
+  separate).
+
 ## [0.2.2] - 2026-07-23
 
 ### Documentation

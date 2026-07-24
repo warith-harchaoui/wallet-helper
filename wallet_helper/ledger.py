@@ -134,10 +134,37 @@ class LedgerLike(Protocol):
         ...
 
 
-# Markers standing in for a content hash inside a canonicalised payload. They are
-# distinctive enough that a real argument value is never mistaken for one.
-_FILE_MARK = "__wallet_helper_file_sha__:"
-_BYTES_MARK = "__wallet_helper_bytes_sha__:"
+# Markers standing in for a content hash inside a canonicalised payload. The
+# leading NUL means a real path or argument string never begins this way, and any
+# user string that somehow does is escaped (see _canonical) so it can never be
+# mistaken for a marker. Order matters: _ESC is checked first when escaping.
+_ESC = "\x00wallet_helper.esc:"
+_FILE_MARK = "\x00wallet_helper.file:"
+_BYTES_MARK = "\x00wallet_helper.bytes:"
+_SET_MARK = "\x00wallet_helper.set:"
+_KEY_MARK = "\x00wallet_helper.key:"
+_MARKS = (_ESC, _FILE_MARK, _BYTES_MARK, _SET_MARK, _KEY_MARK)
+
+
+def _json_default(value: Any) -> str:
+    """Stable JSON fallback for a value :func:`json.dumps` cannot serialise.
+
+    Objects with a meaningful ``str`` (``enum``, ``Decimal``, ``datetime``,
+    ``uuid``, numpy scalars, and so on) are keyed by that text. An object that
+    carries only the default ``object`` representation would otherwise leak its
+    heap address into the key, so the same argument would hash differently on
+    every run and the cache would never hit. Rather than key on an address (a
+    silent miss) or on the type alone (a false hit that aliases distinct
+    instances), we raise and point at the tools meant for volatile handles.
+    """
+    if type(value).__str__ is object.__str__ and type(value).__repr__ is object.__repr__:
+        name = f"{type(value).__module__}.{type(value).__qualname__}"
+        raise TypeError(
+            f"wallet-helper cannot build a stable cache key from a {name} instance: "
+            f"it has no content-bearing repr, so its key would embed a memory address "
+            f"and change every run. Exclude it with ignore=(...) or supply a key=... builder."
+        )
+    return str(value)
 
 
 def _file_path(value: Any) -> str | None:
@@ -146,8 +173,9 @@ def _file_path(value: Any) -> str | None:
     A path reaches us in several forms: a plain ``str``, a :class:`pathlib.Path`,
     or any other :class:`os.PathLike` (``__fspath__``). All are accepted and
     resolved with :func:`os.fspath`. ``bytes`` are excluded on purpose: they are
-    hashed as raw content, not treated as a filesystem path. Never raises, so an
-    arbitrary string (embedded NUL, over-long) is simply reported as not a file.
+    hashed as raw content, not treated as a filesystem path. Never raises: a value
+    that cannot be resolved to an existing file (a bad ``__fspath__``, an embedded
+    NUL, an over-long string) is simply reported as not a file.
     """
     if isinstance(value, (bytes, bytearray)) or not isinstance(value, (str, os.PathLike)):
         return None
@@ -156,7 +184,9 @@ def _file_path(value: Any) -> str | None:
         if isinstance(path, bytes):
             path = path.decode()
         return path if osh.file_exists(path) else None
-    except (OSError, ValueError, UnicodeDecodeError):
+    except Exception:
+        # Any failure resolving or stat-ing the value means it is not a file leaf;
+        # key construction must never crash before the wrapped call even runs.
         return None
 
 
@@ -170,51 +200,85 @@ def _canonical(value: Any) -> Any:
     single cache entry, and two different files never collide even when their
     paths look alike. Leaves that are neither paths nor ``bytes`` pass through
     untouched, so a payload with no file leaves serialises exactly as before.
+
+    A user string that itself begins with a marker prefix is escaped, so a crafted
+    argument can never forge a file or bytes marker and collide with a real one.
+    Dict *keys* are normalised through :func:`_canonical_key`: a plain ``str`` key
+    keeps its text (kwarg names, the common case), while any other key type is
+    encoded structurally. Keys are normally plain identifiers, so this is rarely
+    visible.
     """
-    if isinstance(value, (bytes, bytearray)):
-        # latin-1 is a lossless byte to text mapping, so any bytes hash stably.
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        # Every byte-like type is keyed by its content, and hashes the same
+        # whatever wrapper it arrived in. latin-1 maps bytes to text losslessly.
         return _BYTES_MARK + osh.hash_string(bytes(value).decode("latin-1"))
     path = _file_path(value)
     if path is not None:
         return _FILE_MARK + osh.hashfile(path)
+    if isinstance(value, str) and value.startswith(_MARKS):
+        # Keep user data and synthesised markers in disjoint spaces.
+        return _ESC + value
     if isinstance(value, dict):
-        return {k: _canonical(v) for k, v in value.items()}
+        return {_canonical_key(k): _canonical(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
         return [_canonical(v) for v in value]
+    if isinstance(value, (set, frozenset)):
+        # Unordered: canonicalise members then sort by their JSON form so the same
+        # set always hashes the same, and a file inside a set is content-addressed.
+        # The _SET_MARK sentinel keeps a set distinct from a list of equal members
+        # (a user list starting with _SET_MARK is escaped, so it cannot forge one).
+        members = sorted((_canonical(v) for v in value), key=_dumps)
+        return [_SET_MARK, members]
     return value
+
+
+def _canonical_key(key: Any) -> str:
+    """Return a stable string form of a dict key so the dict always serialises.
+
+    A plain string key is kept as is (and escaped only if it resembles a marker),
+    so the common payload hashes exactly as a plain ``json.dumps`` would. A
+    non-string key (a tuple, ``bytes``, an enum, or one of several mixed with
+    strings) would otherwise make ``json.dumps`` raise or fail to sort; it is
+    encoded as the JSON of its canonical form under a distinct ``_KEY_MARK`` so it
+    never collides with a string key of the same text (``{1: v}`` vs ``{"1": v}``).
+    """
+    if isinstance(key, str):
+        return _ESC + key if key.startswith(_MARKS) else key
+    return _KEY_MARK + _dumps(_canonical(key))
+
+
+def _dumps(obj: Any) -> str:
+    """Serialise an already-canonical object to a stable, key-sorted JSON string."""
+    return json.dumps(obj, sort_keys=True, default=_json_default, ensure_ascii=False)
 
 
 def _digest(payload: Any) -> str:
     """Return a stable content hash for a key payload.
 
     Delegates to os_helper's hashing, so wallet-helper reuses the suite's tested
-    content-addressing instead of rolling its own. File paths are hashed by their
-    bytes wherever they appear, including nested inside a call's arguments, so an
-    identical file reached by a different path still hits the cache.
+    content-addressing instead of rolling its own. The payload is first
+    canonicalised (:func:`_canonical`), which resolves every file-path and
+    ``bytes`` leaf to its content hash *wherever it sits* (top level or nested in
+    the arguments), then the whole canonical form is hashed as key-sorted JSON. So
+    a file reached by a different path still hits the cache, and one rule governs
+    top-level and nested values alike.
 
     Parameters
     ----------
     payload : Any
-        A path to an existing file as a ``str`` or any :class:`os.PathLike`
-        (hashed by its bytes), raw ``bytes``, or any JSON-serialisable value.
-        Nested paths and ``bytes`` are hashed by content too; everything else is
-        hashed by its canonical key-sorted JSON.
+        A path to an existing file as a ``str`` or any :class:`os.PathLike`, raw
+        ``bytes``, or any JSON-serialisable value, at any depth. Files and
+        ``bytes`` are keyed by content (in disjoint spaces: a path and equal raw
+        bytes do not alias); everything else by its canonical JSON.
 
     Returns
     -------
     str
         A fixed-length hex digest.
     """
-    if isinstance(payload, (bytes, bytearray)):
-        # latin-1 is a lossless byte to text mapping, so any bytes hash stably.
-        return osh.hash_string(bytes(payload).decode("latin-1"))
-    path = _file_path(payload)
-    if path is not None:
-        # Hash the file by content, so a rename still hits and two files differ.
-        return osh.hashfile(path)
-    # Everything else: canonical JSON with file and bytes leaves resolved to their
-    # content hash, order-independent and enum-tolerant.
-    return osh.hash_string(json.dumps(_canonical(payload), sort_keys=True, default=str, ensure_ascii=False))
+    # One rule for every depth: canonicalise (files and bytes -> content markers),
+    # then hash the key-sorted JSON. Order-independent and enum-tolerant.
+    return osh.hash_string(_dumps(_canonical(payload)))
 
 
 def is_fresh(record: dict, *, now: float | None = None) -> bool:
@@ -254,6 +318,22 @@ def make_key(namespace: str, payload: Any) -> str:
     -------
     str
         ``"<namespace>_<hash>"``, safe to use as a filename.
+
+    Notes
+    -----
+    A ``str`` or :class:`os.PathLike` argument that names an existing file is
+    keyed by the file's content, by design, so the same file reached by a
+    different path still hits (this applies to a path used as an argument or as a
+    value; a plain ``str`` used as a dict *key* keeps its text). Two consequences
+    worth knowing:
+
+    - A string you meant as plain data (a title, an id) that *happens* to match an
+      existing file in the working directory is content-addressed too. If that is
+      not what you want, wrap the value so it is not a bare path, or exclude the
+      argument with ``ignore=`` / a ``key=`` builder.
+    - If a file is deleted in the brief moment between detection and hashing, the
+      key falls back to the path text for that call. The wrapped function would
+      fail to read the missing file anyway, so no stale result is served.
 
     Examples
     --------
