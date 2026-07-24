@@ -15,6 +15,7 @@ Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 import tempfile
@@ -143,28 +144,60 @@ _FILE_MARK = "\x00wallet_helper.file:"
 _BYTES_MARK = "\x00wallet_helper.bytes:"
 _SET_MARK = "\x00wallet_helper.set:"
 _KEY_MARK = "\x00wallet_helper.key:"
-_MARKS = (_ESC, _FILE_MARK, _BYTES_MARK, _SET_MARK, _KEY_MARK)
+_OBJ_MARK = "\x00wallet_helper.obj:"
+_MARKS = (_ESC, _FILE_MARK, _BYTES_MARK, _SET_MARK, _KEY_MARK, _OBJ_MARK)
 
 
-def _json_default(value: Any) -> str:
-    """Stable JSON fallback for a value :func:`json.dumps` cannot serialise.
+def _has_content_repr(value: Any) -> bool:
+    """Return ``True`` if ``str(value)`` reflects content, not just identity.
 
-    Objects with a meaningful ``str`` (``enum``, ``Decimal``, ``datetime``,
-    ``uuid``, numpy scalars, and so on) are keyed by that text. An object that
-    carries only the default ``object`` representation would otherwise leak its
-    heap address into the key, so the same argument would hash differently on
-    every run and the cache would never hit. Rather than key on an address (a
-    silent miss) or on the type alone (a false hit that aliases distinct
-    instances), we raise and point at the tools meant for volatile handles.
+    An object that overrides ``__str__`` or ``__repr__`` (``enum``, ``Decimal``,
+    ``datetime``, ``uuid``, numpy scalars, dataclasses, ...) has a meaningful text
+    form we can key on. One that inherits both defaults would only stringify to
+    ``<Class at 0x...>``, whose heap address changes every run.
     """
-    if type(value).__str__ is object.__str__ and type(value).__repr__ is object.__repr__:
-        name = f"{type(value).__module__}.{type(value).__qualname__}"
-        raise TypeError(
-            f"wallet-helper cannot build a stable cache key from a {name} instance: "
-            f"it has no content-bearing repr, so its key would embed a memory address "
-            f"and change every run. Exclude it with ignore=(...) or supply a key=... builder."
-        )
-    return str(value)
+    cls = type(value)
+    return cls.__str__ is not object.__str__ or cls.__repr__ is not object.__repr__
+
+
+_MISSING = object()
+
+
+def _safe_getattr(value: Any, name: str) -> Any:
+    """Return ``value.name`` or :data:`_MISSING`, swallowing any error.
+
+    A custom ``__getattr__`` may raise something other than ``AttributeError``;
+    probing an attribute during key construction must never propagate that.
+    """
+    try:
+        return getattr(value, name)
+    except Exception:
+        return _MISSING
+
+
+def _object_state(value: Any) -> dict | None:
+    """Return an object's own attributes (``__dict__`` and ``__slots__``), or ``None``.
+
+    This is the content we key an opaque object on, instead of its address, so the
+    same logical object hashes the same across processes and two objects with
+    different state never collide. Both attribute mechanisms are merged, so a class
+    that uses one, the other, or both is covered. Attribute reads are guarded, so a
+    misbehaving ``__getattr__`` cannot crash key construction.
+    """
+    state: dict = {}
+    own = _safe_getattr(value, "__dict__")
+    if isinstance(own, dict) and own:
+        state.update(own)
+    slots = getattr(type(value), "__slots__", ())
+    if isinstance(slots, str):
+        slots = (slots,)
+    for name in slots:
+        if name == "__dict__":
+            continue
+        attr = _safe_getattr(value, name)
+        if attr is not _MISSING:
+            state[name] = attr
+    return state or None
 
 
 def _file_path(value: Any) -> str | None:
@@ -190,8 +223,8 @@ def _file_path(value: Any) -> str | None:
         return None
 
 
-def _canonical(value: Any) -> Any:
-    """Replace file-path and ``bytes`` leaves with content-hash markers.
+def _canonical(value: Any, seen: dict[int, int] | None = None) -> Any:
+    """Replace file-path, ``bytes``, and opaque-object leaves with stable markers.
 
     A path argument is usually one item inside a call's
     ``{"args": ..., "kwargs": ...}`` payload, not the whole payload. Walking the
@@ -202,11 +235,13 @@ def _canonical(value: Any) -> Any:
     untouched, so a payload with no file leaves serialises exactly as before.
 
     A user string that itself begins with a marker prefix is escaped, so a crafted
-    argument can never forge a file or bytes marker and collide with a real one.
-    Dict *keys* are normalised through :func:`_canonical_key`: a plain ``str`` key
-    keeps its text (kwarg names, the common case), while any other key type is
-    encoded structurally. Keys are normally plain identifiers, so this is rarely
-    visible.
+    argument can never forge a marker and collide with a real one. Dict *keys* are
+    normalised through :func:`_canonical_key`: a plain ``str`` key keeps its text
+    (kwarg names, the common case), while any other key type is encoded
+    structurally. ``seen`` maps the id of each container and object on the current
+    walk path to its depth, so a self-referential graph resolves to a cycle marker
+    instead of recursing without end. The depth is recorded in the marker so a
+    back-edge to one ancestor is told apart from a back-edge to another.
     """
     if isinstance(value, (bytes, bytearray, memoryview)):
         # Every byte-like type is keyed by its content, and hashes the same
@@ -215,24 +250,68 @@ def _canonical(value: Any) -> Any:
     path = _file_path(value)
     if path is not None:
         return _FILE_MARK + osh.hashfile(path)
-    if isinstance(value, str) and value.startswith(_MARKS):
+    if isinstance(value, str):
         # Keep user data and synthesised markers in disjoint spaces.
-        return _ESC + value
-    if isinstance(value, dict):
-        return {_canonical_key(k): _canonical(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_canonical(v) for v in value]
-    if isinstance(value, (set, frozenset)):
-        # Unordered: canonicalise members then sort by their JSON form so the same
-        # set always hashes the same, and a file inside a set is content-addressed.
-        # The _SET_MARK sentinel keeps a set distinct from a list of equal members
-        # (a user list starting with _SET_MARK is escaped, so it cannot forge one).
-        members = sorted((_canonical(v) for v in value), key=_dumps)
-        return [_SET_MARK, members]
-    return value
+        return _ESC + value if value.startswith(_MARKS) else value
+    if value is None or isinstance(value, (int, float, bool)):
+        return value  # immutable scalar: no file, no cycle, hashes as itself
+
+    # From here every value is a container or an object that could form a cycle.
+    marker = id(value)
+    if seen is None:
+        seen = {}
+    if marker in seen:
+        # Back-edge: encode which ancestor (by its depth on this path) it targets,
+        # so two graphs that differ only in the back-edge destination stay distinct.
+        return [_OBJ_MARK, "cycle", seen[marker]]
+    seen[marker] = len(seen)  # depth along the current walk path
+    try:
+        if isinstance(value, dict):
+            return {_canonical_key(k, seen): _canonical(v, seen) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_canonical(v, seen) for v in value]
+        if isinstance(value, (set, frozenset)):
+            # Unordered: canonicalise members then sort by their JSON form so the
+            # same set always hashes the same, and a file inside a set is content-
+            # addressed. _SET_MARK keeps a set distinct from a list of equal members
+            # (a user list starting with _SET_MARK is escaped, so it cannot forge one).
+            members = sorted((_canonical(v, seen) for v in value), key=_dumps)
+            return [_SET_MARK, members]
+        if isinstance(value, functools.partial):
+            # A partial has an address-bearing repr but a structural identity: the
+            # wrapped callable plus its bound args and keywords, each canonicalised.
+            return [
+                _OBJ_MARK,
+                "partial",
+                _canonical(value.func, seen),
+                _canonical(list(value.args), seen),
+                _canonical(dict(value.keywords), seen),
+            ]
+        qualname = _safe_getattr(value, "__qualname__")
+        if qualname is not _MISSING and (callable(value) or isinstance(value, type)):
+            # A function, method, class, or builtin: its repr embeds an address, but
+            # its identity is a stable (module, qualified name). Key on that so a
+            # callback passed as an argument dedups across processes.
+            module = _safe_getattr(value, "__module__")
+            return [_OBJ_MARK, "def", module if isinstance(module, str) else "", qualname]
+        if not _has_content_repr(value):
+            # An opaque object (identity-only repr) would otherwise leak its heap
+            # address into the key. Key it by its own state instead, canonicalised,
+            # so it is deterministic across processes and distinguishes instances.
+            # The type name keeps unrelated types apart; _OBJ_MARK blocks forgery.
+            # Volatile handles held in that state should still be dropped with
+            # ignore=/key=.
+            state = _object_state(value)
+            type_name = f"{type(value).__module__}.{type(value).__qualname__}"
+            return [_OBJ_MARK, type_name, _canonical(state, seen) if state is not None else None]
+        # A value with a content-bearing str (enum, Decimal, datetime, numpy, ...):
+        # leave it for json.dumps (its default=str renders it).
+        return value
+    finally:
+        del seen[marker]
 
 
-def _canonical_key(key: Any) -> str:
+def _canonical_key(key: Any, seen: dict[int, int] | None = None) -> str:
     """Return a stable string form of a dict key so the dict always serialises.
 
     A plain string key is kept as is (and escaped only if it resembles a marker),
@@ -244,12 +323,17 @@ def _canonical_key(key: Any) -> str:
     """
     if isinstance(key, str):
         return _ESC + key if key.startswith(_MARKS) else key
-    return _KEY_MARK + _dumps(_canonical(key))
+    return _KEY_MARK + _dumps(_canonical(key, seen))
 
 
 def _dumps(obj: Any) -> str:
-    """Serialise an already-canonical object to a stable, key-sorted JSON string."""
-    return json.dumps(obj, sort_keys=True, default=_json_default, ensure_ascii=False)
+    """Serialise an already-canonical object to a stable, key-sorted JSON string.
+
+    By this point :func:`_canonical` has turned every opaque object into its
+    state, so ``default=str`` only ever renders values with a content-bearing
+    ``str`` (``enum``, ``Decimal``, ``datetime``, and the like).
+    """
+    return json.dumps(obj, sort_keys=True, default=str, ensure_ascii=False)
 
 
 def _digest(payload: Any) -> str:

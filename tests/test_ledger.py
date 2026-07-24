@@ -127,14 +127,117 @@ def test_file_inside_a_set_is_content_addressed(tmp_path: Path) -> None:
     assert ka == kb  # identical file content, different path, inside a set
 
 
-def test_object_without_content_repr_is_refused_not_keyed_on_address() -> None:
+def test_opaque_object_is_keyed_by_state_not_address() -> None:
     class Handle:  # only the default object repr: <...Handle object at 0x...>
+        def __init__(self, x: int) -> None:
+            self.x = x
+
+    # Keying on the address would never hit across processes; we key on the
+    # object's state instead, so equal state hits and different state does not.
+    same1 = make_key("ns", {"args": (Handle(5),), "kwargs": {}})
+    same2 = make_key("ns", {"args": (Handle(5),), "kwargs": {}})
+    other = make_key("ns", {"args": (Handle(6),), "kwargs": {}})
+    assert same1 == same2  # deterministic, distinct instances of equal state
+    assert same1 != other  # different state, different key
+
+
+def test_function_argument_keys_by_identity_not_address() -> None:
+    def transform(x: int) -> int:
+        return x
+
+    def other(x: int) -> int:
+        return x
+
+    # A callback passed as an argument keys by its (module, qualname), so it dedups
+    # rather than keying on the address in its repr, and distinct functions differ.
+    k1 = make_key("ns", {"args": (transform,), "kwargs": {}})
+    k2 = make_key("ns", {"args": (transform,), "kwargs": {}})
+    assert k1 == k2
+    assert k1 != make_key("ns", {"args": (other,), "kwargs": {}})
+    assert k1 != make_key("ns", {"args": (len,), "kwargs": {}})  # a builtin too
+
+
+def test_functools_partial_keys_structurally() -> None:
+    import functools
+
+    def base(a: int, b: int) -> int:
+        return a + b
+
+    p1 = functools.partial(base, 1)
+    p2 = functools.partial(base, 1)
+    # A partial keys by its wrapped function plus bound args, deterministically,
+    # not by the address in its repr.
+    assert make_key("ns", {"args": (p1,), "kwargs": {}}) == make_key("ns", {"args": (p2,), "kwargs": {}})
+    assert make_key("ns", {"args": (p1,), "kwargs": {}}) != make_key(
+        "ns", {"args": (functools.partial(base, 2),), "kwargs": {}}
+    )
+
+
+def test_cyclic_object_graph_does_not_crash() -> None:
+    class Node:
         pass
 
-    # Keying on the address would silently never hit and bloat the store, so we
-    # refuse loudly and point the caller at ignore=/key=.
-    with pytest.raises(TypeError, match="ignore="):
-        make_key("ns", {"args": (Handle(),), "kwargs": {}})
+    n = Node()
+    n.self = n  # a self-referential graph must not blow the stack
+    k1 = make_key("ns", {"args": (n,), "kwargs": {}})
+    k2 = make_key("ns", {"args": (n,), "kwargs": {}})
+    assert isinstance(k1, str) and k1 == k2
+
+    a, b = Node(), Node()
+    a.other, b.other = b, a  # indirect cycle
+    assert isinstance(make_key("ns", {"args": (a,), "kwargs": {}}), str)
+
+
+def test_cyclic_graphs_with_different_back_edges_do_not_collide() -> None:
+    # Two graphs identical except for which ancestor the back-edge targets must
+    # not share a key (the cycle marker records the target's depth).
+    x: dict = {}
+    x["child"] = {"up": x}  # inner.up -> the root
+    y: dict = {}
+    inner: dict = {}
+    inner["up"] = inner  # inner.up -> itself
+    y["child"] = inner
+    assert make_key("ns", x) != make_key("ns", y)
+
+
+def test_getattr_raising_non_attributeerror_does_not_crash() -> None:
+    class Hostile:
+        def __getattr__(self, name: str) -> object:
+            raise ValueError(f"boom {name}")
+
+    # A __getattr__ that raises something other than AttributeError must not
+    # propagate out of key construction.
+    k = make_key("ns", {"args": (Hostile(),), "kwargs": {}})
+    assert isinstance(k, str)
+
+
+def test_stateless_opaque_objects_of_a_type_share_a_key() -> None:
+    class Marker:  # no attributes to distinguish instances
+        pass
+
+    # With no distinguishing state, two instances are content-equivalent, so they
+    # deterministically share one key rather than leaking two addresses.
+    k1 = make_key("ns", {"args": (Marker(),), "kwargs": {}})
+    k2 = make_key("ns", {"args": (Marker(),), "kwargs": {}})
+    assert k1 == k2
+
+
+def test_opaque_object_state_content_addresses_a_nested_file(tmp_path: Path) -> None:
+    a = tmp_path / "one" / "clip.raw"
+    a.parent.mkdir()
+    a.write_bytes(b"same-bytes")
+    b = tmp_path / "two" / "other.raw"
+    b.parent.mkdir()
+    b.write_bytes(b"same-bytes")
+
+    class Job:
+        def __init__(self, path: str) -> None:
+            self.path = path
+
+    # A file path held in an object's state is content-addressed like any other.
+    assert make_key("ns", {"args": (Job(str(a)),), "kwargs": {}}) == make_key(
+        "ns", {"args": (Job(str(b)),), "kwargs": {}}
+    )
 
 
 def test_object_with_a_content_repr_keys_stably() -> None:

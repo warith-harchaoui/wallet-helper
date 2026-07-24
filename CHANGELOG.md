@@ -37,12 +37,23 @@ semantic versioning.
   user string that resembles one is escaped).
 - Every byte-like argument (`bytes`, `bytearray`, `memoryview`) is content
   addressed and keys deterministically, the same whatever wrapper it arrived in.
-- An argument that has only the default object representation (its `repr` would
-  embed a memory address) is now **refused with a clear error** instead of being
-  keyed on that address, which used to cause silent cache misses and a store that
-  filled with duplicate entries. Exclude such a handle with `ignore=(...)` or a
-  `key=...` builder. Values with a content-bearing `str` (`enum`, `Decimal`,
-  `datetime`, `uuid`, numpy scalars, dataclasses, ...) are unaffected.
+- An argument that has only the default object representation (whose `str` would
+  embed a memory address) is now **keyed by its own state** (`__dict__` or
+  `__slots__`), canonicalised, instead of by that address. So the same object
+  hits across processes, two objects with different state never collide, and a
+  file path held in an object's state is content-addressed like any other. This
+  replaces the previous behavior of keying on the address (silent cross-process
+  misses and a store that filled with duplicates). Volatile handles held inside
+  such an object should still be dropped with `ignore=(...)` or a `key=...`
+  builder. Values with a content-bearing `str` (`enum`, `Decimal`, `datetime`,
+  `uuid`, numpy scalars, ...) are keyed by that text, as before.
+- A function, method, class, or builtin passed as an argument (a callback or
+  strategy) is keyed by its stable `(module, qualified name)` rather than the
+  address in its repr, so it dedups across processes instead of never hitting. A
+  `functools.partial` is keyed structurally (wrapped callable plus bound args).
+- Key construction no longer crashes on a self-referential argument graph (a
+  cycle resolves to a stable marker) or on an object whose `__getattr__` raises
+  something other than `AttributeError`.
 - Dicts with non-string keys (a tuple, `bytes`, an enum, or a mix of `int` and
   `str`) no longer crash key construction; keys are normalised so the payload
   always serialises and distinct keys never alias (`{1: v}` and `{"1": v}` stay
