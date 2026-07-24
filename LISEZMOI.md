@@ -16,9 +16,11 @@ Par [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui)
 
 [💻 Documentation](https://harchaoui.org/warith/ai-helpers/docs/wallet-helper-doc/)
 
+[🗺️ Paysage](https://github.com/warith-harchaoui/wallet-helper/blob/main/PAYSAGE.md)
+
 [📋 Exemples](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md)
 
-[🔭 Paysage](https://github.com/warith-harchaoui/wallet-helper/blob/main/LANDSCAPE.md)
+[🔭 Paysage](https://github.com/warith-harchaoui/wallet-helper/blob/main/PAYSAGE.md) — le paysage concurrentiel, avec une carte de positionnement
 
 ## Ce que ça fait
 

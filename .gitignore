@@ -19,3 +19,7 @@ CODING.md
 
 # Private, honest self-assessment. Never committed.
 ASSESSMENT.md
+
+# Landscape source tables (figures are committed; the CSVs are regenerated)
+assets/landscape.csv
+assets/paysage.csv

@@ -14,9 +14,11 @@ By [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui)
 
 [💻 Documentation](https://harchaoui.org/warith/ai-helpers/docs/wallet-helper-doc/)
 
+[🗺️ Landscape](https://github.com/warith-harchaoui/wallet-helper/blob/main/LANDSCAPE.md)
+
 [📋 Examples](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md)
 
-[🔭 Landscape](https://github.com/warith-harchaoui/wallet-helper/blob/main/LANDSCAPE.md)
+[🔭 Landscape](https://github.com/warith-harchaoui/wallet-helper/blob/main/LANDSCAPE.md) — the competitive landscape, with a positioning map
 
 ## What it does
 

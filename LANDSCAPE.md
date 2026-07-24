@@ -1,5 +1,7 @@
 # Landscape
 
+[🇫🇷 PAYSAGE.md](https://github.com/warith-harchaoui/wallet-helper/blob/main/PAYSAGE.md) · 🇬🇧 English
+
 Where wallet-helper sits among caching, memoization, single-flight, and
 idempotency tools. The pieces exist separately. What is uncommon is the
 combination: persistent, content-addressed memoization that also coalesces
@@ -35,7 +37,7 @@ Rated ⭐ (absent or poor) to ⭐⭐⭐⭐⭐ (best in class) per column.
 - **Local (no service)**: runs without a separate database or cache server. This
   is about deployment footprint, not dependency count.
 
-| Project | Persistent | Content-addresses input | In-process single-flight | Cross-process single-flight | TTL / expiry | Server for many clients | Decorator | Local (no service) |
+| Caching | Persistent | Content-addresses input | In-process single-flight | Cross-process single-flight | TTL / expiry | Server for many clients | Decorator | Local (no service) |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | **wallet-helper** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ |
 | `functools.lru_cache` | ⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐⭐ |
@@ -52,9 +54,17 @@ Rated ⭐ (absent or poor) to ⭐⭐⭐⭐⭐ (best in class) per column.
 | `cacheme` | ⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐ | ⭐⭐⭐⭐ | ⭐⭐ |
 | GPTCache (semantic) | ⭐⭐⭐⭐ | ⭐⭐ | ⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐ |
 
+## Positioning map
+
+2D representation of the table above.
+
+![Positioning map](https://raw.githubusercontent.com/warith-harchaoui/wallet-helper/main/assets/landscape.png)
+
+The map is a 2-D summary of the eight criteria, so read it as a shape, not a scoreboard. `wallet-helper` is at the top-right corner. The axes read **Horizontal — Service ↔ Process** and **Vertical — Clients ↔ Decorator**.
+
 ## Pros and cons
 
-| Project | Pros | Cons |
+| Caching | Pros | Cons |
 |---|---|---|
 | **wallet-helper** | Persistent and content-addressed (hashes file content and bytes, not just args); single-flight in-process (threads) and cross-process (a fenced SQLite or HTTP lease, so a crashed or stalled leader cannot disrupt a new leader); sync and async (`async def`); time-to-live, stale-while-revalidate, and automatic eviction; optional HTTP server and `RemoteLedger` centralize dedup for a fleet; simple `@memoize`; runs with no separate service. | Younger and smaller than the veterans; one direct dependency (os-helper) that pulls a few transitive libraries; cross-process lease needs the SQLite backend or the server; no rolling budget windows or semantic (embedding) matching. |
 | `functools.lru_cache` | Stdlib, zero setup, great `cache_info()`. | In-memory only (lost on restart); keys on args only; does not coalesce concurrent calls; bounded by `maxsize`. |
