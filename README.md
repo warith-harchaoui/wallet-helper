@@ -8,7 +8,6 @@
 
 Never run the same heavy call twice. wallet-helper is persistent memoization for expensive calls (a paid API request, a slow model, any heavy function): an identical call is served from a local store instead of running again, across process restarts. When two identical calls start at the same time, they collapse into one, so the second waits for the first and reuses its result instead of running in parallel (single-flight).
 
-By [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui)
 
 ## Documentation
 
