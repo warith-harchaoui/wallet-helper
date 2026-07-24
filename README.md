@@ -18,8 +18,6 @@ By [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui)
 
 [📋 Examples](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md)
 
-[🔭 Landscape](https://github.com/warith-harchaoui/wallet-helper/blob/main/LANDSCAPE.md) — the competitive landscape, with a positioning map
-
 ## What it does
 
 A heavy call is a problem you do not want to pay for twice. Two things cause a double run:
@@ -50,14 +48,14 @@ The only requirement is **Python 3.10 to 3.13**. If you need Python itself:
 Install from GitHub, pinned to the release tag:
 
 ```bash
-pip install "git+https://github.com/warith-harchaoui/wallet-helper.git@v0.2.0"
+pip install "git+https://github.com/warith-harchaoui/wallet-helper.git@v0.3.0"
 ```
 
 The command-line and HTTP surfaces are opt-in extras:
 
 ```bash
-pip install "wallet-helper[cli] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.2.0"   # click CLI variant    -> click
-pip install "wallet-helper[api] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.2.0"   # HTTP dedup server     -> fastapi, uvicorn
+pip install "wallet-helper[cli] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.3.0"   # click CLI variant    -> click
+pip install "wallet-helper[api] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.3.0"   # HTTP dedup server     -> fastapi, uvicorn
 ```
 
 ## Quick start
