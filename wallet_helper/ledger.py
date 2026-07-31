@@ -16,6 +16,7 @@ Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 from __future__ import annotations
 
 import functools
+import glob as glob_module
 import json
 import os
 import tempfile
@@ -181,22 +182,29 @@ def _object_state(value: Any) -> dict | None:
     This is the content we key an opaque object on, instead of its address, so the
     same logical object hashes the same across processes and two objects with
     different state never collide. Both attribute mechanisms are merged, so a class
-    that uses one, the other, or both is covered. Attribute reads are guarded, so a
-    misbehaving ``__getattr__`` cannot crash key construction.
+    that uses one, the other, or both is covered. ``__slots__`` is collected from
+    every class in the MRO, not just ``type(value)``: a subclass's ``__slots__``
+    only lists the names it adds, so reading just that tuple would silently drop
+    any slot inherited from a base class, and two instances differing only in that
+    inherited slot would then key alike (a real collision, not just a miss).
+    ``__weakref__`` is a runtime plumbing slot, not user state, so it is skipped
+    like ``__dict__``. Attribute reads are guarded, so a misbehaving
+    ``__getattr__`` cannot crash key construction.
     """
     state: dict = {}
     own = _safe_getattr(value, "__dict__")
     if isinstance(own, dict) and own:
         state.update(own)
-    slots = getattr(type(value), "__slots__", ())
-    if isinstance(slots, str):
-        slots = (slots,)
-    for name in slots:
-        if name == "__dict__":
-            continue
-        attr = _safe_getattr(value, name)
-        if attr is not _MISSING:
-            state[name] = attr
+    for klass in type(value).__mro__:
+        slots = klass.__dict__.get("__slots__", ())
+        if isinstance(slots, str):
+            slots = (slots,)
+        for name in slots:
+            if name in ("__dict__", "__weakref__"):
+                continue
+            attr = _safe_getattr(value, name)
+            if attr is not _MISSING:
+                state[name] = attr
     return state or None
 
 
@@ -427,6 +435,19 @@ def make_key(namespace: str, payload: Any) -> str:
     return f"{namespace}_{_digest(payload)}"
 
 
+def _namespace_glob(namespace: str) -> str:
+    """Return a glob pattern matching only entries under ``namespace``.
+
+    A namespace is normally a ``module.qualname`` and never contains a glob
+    metacharacter, but nothing stops a custom one from including ``*``, ``?``,
+    or ``[``. Left unescaped, ``stats("a*b")`` or ``clear("a*b")`` would match
+    entries under an unrelated namespace whose name merely fits the pattern.
+    :func:`glob.escape` neutralises the namespace itself; the trailing
+    ``_*.json`` stays a real wildcard, matching any hash under it.
+    """
+    return f"{glob_module.escape(namespace)}_*.json"
+
+
 class Ledger:
     """A directory-backed store of results, one JSON file per entry.
 
@@ -533,7 +554,7 @@ class Ledger:
             osh.remove_directory(str(self.dir))
             return
         # Keys are "<namespace>_<hash>", one file each; unlink the matches.
-        osh.remove_files([str(p) for p in self.dir.glob(f"{namespace}_*.json")])
+        osh.remove_files([str(p) for p in self.dir.glob(_namespace_glob(namespace))])
 
     def stats(self, namespace: str | None = None) -> dict:
         """Count stored entries and their reuses, for the store or one namespace.
@@ -551,7 +572,7 @@ class Ledger:
             cached result was reused, that is, how many real calls were saved.
         """
         entries = hits = 0
-        pattern = "*.json" if namespace is None else f"{namespace}_*.json"
+        pattern = "*.json" if namespace is None else _namespace_glob(namespace)
         for path in self.dir.glob(pattern):
             record = json.loads(path.read_text(encoding="utf-8"))
             entries += 1

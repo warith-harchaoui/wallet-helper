@@ -90,3 +90,14 @@ def test_evict_reports_removed_count(client: TestClient) -> None:
 
 def test_missing_ref_is_422(client: TestClient) -> None:
     assert client.post("/claim", json={}).status_code == 422
+
+
+def test_result_route_accepts_a_key_with_a_slash(client: TestClient) -> None:
+    # A namespace with a "/" makes the key itself contain one; the route must
+    # still match the whole thing, not just the segment before the first slash.
+    call = {"namespace": "asr/v2", "payload": {"file": "h.wav"}}
+    key = client.post("/key", json=call).json()["key"]
+    assert "/" in key
+    client.post("/claim", json=call)
+    client.post("/submit", json={**call, "result": "ok"})
+    assert client.get(f"/result/{key}").json()["result"] == "ok"

@@ -177,7 +177,7 @@ def create_app(ledger: SqliteLedger | None = None) -> FastAPI:
         k = _resolve_key(ref)
         return {"key": k, "extended": store.extend(k, token=ref.token)}
 
-    @app.get("/result/{key}")
+    @app.get("/result/{key:path}")
     async def result(key: str, wait: float = 0.0, poll: float = 0.1) -> dict:
         """Return a stored result, optionally waiting up to ``wait`` seconds.
 
@@ -186,6 +186,9 @@ def create_app(ledger: SqliteLedger | None = None) -> FastAPI:
         block on one call and receive the leader's result when it lands. The
         SQLite reads run in a worker thread, so a long poll never blocks the
         event loop and the server stays responsive under load.
+
+        The ``:path`` converter matches a key that contains a ``/`` (a namespace
+        with a slash in it), not only the common ``namespace_hash`` shape.
         """
         waited = 0.0
         while True:

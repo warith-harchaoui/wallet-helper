@@ -6,6 +6,7 @@ Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -93,3 +94,48 @@ def test_clear_scopes_to_a_namespace(ledger: SqliteLedger) -> None:
     ledger.put("b_1", 2)
     ledger.clear("a")
     assert ledger.stats("a")["entries"] == 0 and ledger.stats("b")["entries"] == 1
+
+
+def test_namespace_like_metacharacters_do_not_leak_across_namespaces(ledger: SqliteLedger) -> None:
+    # "a%" is a literal namespace name, not a SQL LIKE pattern. Unescaped, "%"
+    # would also match keys under an unrelated namespace like "aXXXb".
+    ledger.put("a_1", 1)
+    ledger.put("aXXXb_2", 2)
+    assert ledger.stats("a%") == {"entries": 0, "hits": 0}
+    ledger.clear("a%")
+    assert ledger.stats("a")["entries"] == 1 and ledger.stats("aXXXb")["entries"] == 1
+
+
+def test_operations_do_not_leak_connections(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # A connection opened per call and never closed (using sqlite3.Connection as
+    # its own context manager only commits/rolls back, it does not close) would
+    # exhaust file descriptors over a long-running process. Track every
+    # connection this ledger opens and assert each one ends up closed.
+    opened: list[sqlite3.Connection] = []
+    real_connect = sqlite3.connect
+
+    def tracking_connect(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        opened.append(conn)
+        return conn
+
+    monkeypatch.setattr(sqlite3, "connect", tracking_connect)
+
+    ledger = SqliteLedger(tmp_path / "ledger.db")
+    ledger.put("ns_a", {"v": 1})
+    ledger.get("ns_a")
+    ledger.has("ns_a")
+    ledger.register_hit("ns_a")
+    ledger.stats()
+    ledger.stats("ns")
+    lease = ledger.claim("ns_b")
+    ledger.extend("ns_b", lease["token"])
+    ledger.submit("ns_b", {"v": 2}, token=lease["token"])
+    ledger.release("ns_a")
+    ledger.evict()
+    ledger.clear("ns")
+
+    assert len(opened) > 5  # sanity: the tracked calls really did open connections
+    for conn in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")  # closed connections refuse to operate

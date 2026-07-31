@@ -141,6 +141,24 @@ def test_opaque_object_is_keyed_by_state_not_address() -> None:
     assert same1 != other  # different state, different key
 
 
+def test_opaque_object_state_includes_inherited_slots() -> None:
+    class Base:
+        __slots__ = ("a",)
+
+    class Child(Base):  # Child.__slots__ only lists "b"; "a" comes from Base
+        __slots__ = ("b",)
+
+    c1 = Child()
+    c1.a, c1.b = 1, 2
+    c2 = Child()
+    c2.a, c2.b = 999, 2  # differs only in the inherited slot "a"
+
+    k1 = make_key("ns", {"args": (c1,), "kwargs": {}})
+    k2 = make_key("ns", {"args": (c2,), "kwargs": {}})
+    # Reading only type(value).__slots__ would miss "a" and collide the two.
+    assert k1 != k2
+
+
 def test_function_argument_keys_by_identity_not_address() -> None:
     def transform(x: int) -> int:
         return x
@@ -313,6 +331,16 @@ def test_stats_and_clear_scope_to_a_namespace(ledger: Ledger) -> None:
     ledger.clear("a")
     assert ledger.stats("a")["entries"] == 0
     assert ledger.stats("b")["entries"] == 1  # other namespace untouched
+
+
+def test_namespace_glob_metacharacters_do_not_leak_across_namespaces(ledger: Ledger) -> None:
+    # "a*b" is a literal namespace name, not a glob pattern. Unescaped, it would
+    # also match keys under an unrelated namespace like "axxxb".
+    ledger.put("a_1", 1)
+    ledger.put("axxxb_2", 2)
+    assert ledger.stats("a*b") == {"entries": 0, "hits": 0}
+    ledger.clear("a*b")
+    assert ledger.stats("a")["entries"] == 1 and ledger.stats("axxxb")["entries"] == 1
 
 
 def test_missing_key_returns_none(ledger: Ledger) -> None:

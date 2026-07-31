@@ -31,6 +31,20 @@ from typing import Any, Iterator
 from wallet_helper.ledger import _DEFAULT_DIR
 
 
+def _namespace_like(namespace: str) -> str:
+    """Return a ``LIKE`` pattern matching only keys under ``namespace``.
+
+    A namespace is normally a ``module.qualname`` and never contains a ``LIKE``
+    metacharacter, but nothing stops a custom one from including ``%`` or ``_``.
+    Left unescaped, ``stats("a%")`` or ``clear("a%")`` would match keys under an
+    unrelated namespace that merely fits the pattern. The backslash is escaped
+    first so escaping the other two characters cannot itself be undone; the
+    trailing ``\\_%`` stays a real wildcard, matching any hash under it.
+    """
+    escaped = namespace.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    return escaped + r"\_%"
+
+
 class SqliteLedger:
     """A single-file SQLite store of results, with an in-flight lease table.
 
@@ -58,7 +72,7 @@ class SqliteLedger:
         self.path = Path(db_path) if db_path is not None else _DEFAULT_DIR / "ledger.db"
         self.max_entries = max_entries
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        with self._session() as conn:
             # WAL lets readers and one writer proceed at once, which is the point
             # of choosing SQLite over one-file-per-entry for shared use.
             conn.execute("PRAGMA journal_mode=WAL")
@@ -88,18 +102,41 @@ class SqliteLedger:
         return str(self.path)
 
     def _connect(self) -> sqlite3.Connection:
-        """Open a short-lived connection; the timeout makes writers wait, not fail."""
+        """Open a connection; the timeout makes writers wait, not fail.
+
+        The caller owns closing it. Used directly only by :meth:`claim`, which
+        needs manual transaction control; every other method goes through
+        :meth:`_session`.
+        """
         return sqlite3.connect(self.path, timeout=30.0)
+
+    @contextmanager
+    def _session(self) -> Iterator[sqlite3.Connection]:
+        """A short-lived connection: commit on success, roll back on error, always close.
+
+        ``sqlite3.Connection`` used as its own context manager commits or rolls
+        back but never closes, which would leak a connection (and a file
+        descriptor) on every call. This wraps that behaviour and closes it too.
+        """
+        conn = self._connect()
+        try:
+            yield conn
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def has(self, key: str) -> bool:
         """Return ``True`` if a result is already stored for ``key``."""
-        with self._connect() as conn:
+        with self._session() as conn:
             row = conn.execute("SELECT 1 FROM entries WHERE key = ?", (key,)).fetchone()
         return row is not None
 
     def get_record(self, key: str) -> dict | None:
         """Return the full stored record, or ``None`` if absent."""
-        with self._connect() as conn:
+        with self._session() as conn:
             row = conn.execute(
                 "SELECT key, result, created_at, expires_at, hits FROM entries WHERE key = ?", (key,)
             ).fetchone()
@@ -120,7 +157,7 @@ class SqliteLedger:
         """
         now = time.time()
         expires_at = now + ttl if ttl is not None else None
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute(
                 "INSERT INTO entries (key, result, created_at, expires_at, hits) VALUES (?, ?, ?, ?, 0) "
                 "ON CONFLICT(key) DO UPDATE SET result=excluded.result, created_at=excluded.created_at, "
@@ -137,16 +174,16 @@ class SqliteLedger:
         never lose a count. This is the reason to prefer this backend over the
         read-modify-write of the JSON one under real concurrency.
         """
-        with self._connect() as conn:
+        with self._session() as conn:
             conn.execute("UPDATE entries SET hits = hits + 1 WHERE key = ?", (key,))
 
     def stats(self, namespace: str | None = None) -> dict:
         """Count stored entries and their reuses, for the store or one namespace."""
-        with self._connect() as conn:
+        with self._session() as conn:
             if namespace is None:
                 row = conn.execute("SELECT COUNT(*), COALESCE(SUM(hits), 0) FROM entries").fetchone()
             else:
-                like = (namespace.replace("_", r"\_") + r"\_%",)
+                like = (_namespace_like(namespace),)
                 row = conn.execute(
                     r"SELECT COUNT(*), COALESCE(SUM(hits), 0) FROM entries WHERE key LIKE ? ESCAPE '\'", like
                 ).fetchone()
@@ -157,12 +194,12 @@ class SqliteLedger:
 
         The database file itself remains; only rows are removed.
         """
-        with self._connect() as conn:
+        with self._session() as conn:
             if namespace is None:
                 conn.execute("DELETE FROM entries")
                 conn.execute("DELETE FROM pending")
             else:
-                like = (namespace.replace("_", r"\_") + r"\_%",)
+                like = (_namespace_like(namespace),)
                 conn.execute(r"DELETE FROM entries WHERE key LIKE ? ESCAPE '\'", like)
                 conn.execute(r"DELETE FROM pending WHERE key LIKE ? ESCAPE '\'", like)
 
@@ -230,7 +267,7 @@ class SqliteLedger:
         lease can still be run twice, as with any time-based lease).
         """
         self.put(key, result, ttl=ttl)
-        with self._connect() as conn:
+        with self._session() as conn:
             if token is None:
                 conn.execute("DELETE FROM pending WHERE key = ?", (key,))
             else:
@@ -239,7 +276,7 @@ class SqliteLedger:
 
     def release(self, key: str, token: str | None = None) -> None:
         """Drop a lease so a waiter can take over (only your own, if ``token`` is given)."""
-        with self._connect() as conn:
+        with self._session() as conn:
             if token is None:
                 conn.execute("DELETE FROM pending WHERE key = ?", (key,))
             else:
@@ -258,7 +295,7 @@ class SqliteLedger:
         bool
             ``True`` if a lease you may renew existed and was renewed.
         """
-        with self._connect() as conn:
+        with self._session() as conn:
             if token is None:
                 cur = conn.execute("UPDATE pending SET leased_at = ? WHERE key = ?", (time.time(), key))
             else:
@@ -307,7 +344,7 @@ class SqliteLedger:
         newest ``max_entries`` by creation time are kept.
         """
         now = time.time()
-        with self._connect() as conn:
+        with self._session() as conn:
             before = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]
             conn.execute("DELETE FROM entries WHERE expires_at IS NOT NULL AND expires_at <= ?", (now,))
             if older_than is not None:
