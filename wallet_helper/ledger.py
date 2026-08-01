@@ -435,17 +435,48 @@ def make_key(namespace: str, payload: Any) -> str:
     return f"{namespace}_{_digest(payload)}"
 
 
+# Characters that are legal inside a ledger key (they come from a namespace or
+# a qualname such as "outer.<locals>.inner") but illegal in a Windows filename.
+# The JSON store turns a key into a filename, so on Windows an un-encoded key
+# with any of these raises OSError. Percent-encoding them (and control chars,
+# and "%" itself) keeps the store working on Windows too.
+_FORBIDDEN_IN_FILENAME = '<>:"/\\|?*'
+
+
+def _safe_filename(name: str) -> str:
+    """Return ``name`` with Windows-illegal filename characters percent-encoded.
+
+    A ledger key is ``"<namespace>_<hash>"``. The hash is hex (always safe), but
+    the namespace defaults to ``module.qualname`` and, for a nested function or a
+    lambda, contains ``<locals>`` / ``<lambda>``; ``<`` and ``>`` (and ``: " / \\
+    | ? *`` and control characters) are illegal in a Windows filename, so the
+    JSON store crashed there. This encoding is a no-op for a key that has none of
+    them, so the common filename is byte-identical to before; and it is injective
+    (``%`` is itself encoded), so two distinct keys never collide on one file.
+    """
+    out: list[str] = []
+    for ch in name:
+        if ch == "%" or ch in _FORBIDDEN_IN_FILENAME or ord(ch) < 0x20:
+            out.append(f"%{ord(ch):02X}")
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def _namespace_glob(namespace: str) -> str:
     """Return a glob pattern matching only entries under ``namespace``.
 
     A namespace is normally a ``module.qualname`` and never contains a glob
     metacharacter, but nothing stops a custom one from including ``*``, ``?``,
     or ``[``. Left unescaped, ``stats("a*b")`` or ``clear("a*b")`` would match
-    entries under an unrelated namespace whose name merely fits the pattern.
-    :func:`glob.escape` neutralises the namespace itself; the trailing
-    ``_*.json`` stays a real wildcard, matching any hash under it.
+    entries under an unrelated namespace whose name merely fits the pattern. The
+    namespace is first mapped through :func:`_safe_filename` (the same transform
+    the on-disk names use), then :func:`glob.escape` neutralises any remaining
+    glob metacharacter; the trailing ``_*.json`` stays a real wildcard. Because
+    the transform is per-character and leaves ``_`` and hex alone, this matches
+    exactly the files whose key begins with ``namespace_``.
     """
-    return f"{glob_module.escape(namespace)}_*.json"
+    return f"{glob_module.escape(_safe_filename(namespace))}_*.json"
 
 
 class Ledger:
@@ -479,8 +510,8 @@ class Ledger:
         return str(self.dir)
 
     def _path(self, key: str) -> Path:
-        """Absolute path of the JSON entry for ``key``."""
-        return self.dir / f"{key}.json"
+        """Absolute path of the JSON entry for ``key`` (filename made Windows-safe)."""
+        return self.dir / f"{_safe_filename(key)}.json"
 
     def has(self, key: str) -> bool:
         """Return ``True`` if a result is already stored for ``key``."""

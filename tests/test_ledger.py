@@ -343,6 +343,23 @@ def test_namespace_glob_metacharacters_do_not_leak_across_namespaces(ledger: Led
     assert ledger.stats("a")["entries"] == 1 and ledger.stats("axxxb")["entries"] == 1
 
 
+def test_json_store_filename_is_windows_safe(tmp_path: Path) -> None:
+    # A default namespace is module.qualname; for a nested function or a lambda
+    # that contains "<locals>" / "<lambda>", and "<" ">" (plus : " / \ | ? *)
+    # are illegal in a Windows filename, which used to crash Ledger.put there.
+    # The round-trip must work and the on-disk name must carry none of them.
+    # OS-independent: it asserts on the filename, so it guards the Windows path
+    # even when the suite runs on POSIX (where those characters happen to be legal).
+    ledger = Ledger(tmp_path)
+    key = make_key('mod.outer.<locals>.inner:weird*name?', {"x": 1})
+    ledger.put(key, "v")
+    assert ledger.get(key) == "v"  # round-trips despite the forbidden characters
+    forbidden = set('<>:"/\\|?*')
+    on_disk = [p.name for p in tmp_path.glob("*.json")]
+    assert len(on_disk) == 1
+    assert not (forbidden & set(on_disk[0])), on_disk[0]
+
+
 def test_missing_key_returns_none(ledger: Ledger) -> None:
     assert ledger.get("absent") is None and ledger.get_record("absent") is None
 

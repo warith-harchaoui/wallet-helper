@@ -7,6 +7,16 @@ semantic versioning.
 ## [0.3.1] - 2026-08-01
 
 ### Fixed
+- **The JSON `Ledger` crashed on Windows for a memoized closure or lambda.**
+  It turned a cache key straight into a filename, and a default namespace is
+  `module.qualname` -- which for a nested function or a lambda contains
+  `<locals>` / `<lambda>`. `<` and `>` (and `: " / \ | ? *` and control
+  characters) are illegal in a Windows filename, so `Ledger.put` raised
+  `OSError: [Errno 22] Invalid argument` there. Those characters are now
+  percent-encoded when building the filename (a no-op for a key that has none,
+  so common filenames are unchanged and injective, so distinct keys never
+  collide). The `SqliteLedger` was never affected (it stores the key as
+  arbitrary text). Found by the new cross-OS install smoke test (see CI below).
 - **`SqliteLedger` leaked a connection (and a file descriptor) on every call.**
   `sqlite3.Connection` used as its own context manager commits or rolls back,
   but it never closes the connection; every `has`, `get`, `get_record`, `put`,

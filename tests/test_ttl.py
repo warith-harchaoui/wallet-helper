@@ -57,10 +57,15 @@ def test_stale_while_revalidate_serves_stale_then_refreshes(tmp_path: Path) -> N
 
 def test_sqlite_ttl_via_claim(tmp_path: Path) -> None:
     ledger = SqliteLedger(tmp_path / "ledger.db")
-    ledger.submit("ns_x", "v", ttl=0.05)
-    assert ledger.claim("ns_x")["status"] == "hit"
-    time.sleep(0.06)
-    assert ledger.claim("ns_x")["status"] == "leased"  # expired, so it re-leases
+    # Fresh well within its ttl: a generous window so even a slow or loaded
+    # runner reads it back as a hit. (A tight 0.05 s window used to flake here,
+    # expiring between the submit and the claim under load.)
+    ledger.submit("ns_fresh", "v", ttl=30.0)
+    assert ledger.claim("ns_fresh")["status"] == "hit"
+    # Already expired: ttl=0 puts expiry at store time, so any later claim sees
+    # it as stale and re-leases, with no sleep and no timing race.
+    ledger.submit("ns_stale", "v", ttl=0.0)
+    assert ledger.claim("ns_stale")["status"] == "leased"
 
 
 @pytest.mark.parametrize("make", [lambda p: Ledger(p), lambda p: SqliteLedger(p / "l.db")])
