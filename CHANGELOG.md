@@ -4,6 +4,41 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [0.3.1] - 2026-08-01
+
+### Fixed
+- **`SqliteLedger` leaked a connection (and a file descriptor) on every call.**
+  `sqlite3.Connection` used as its own context manager commits or rolls back,
+  but it never closes the connection; every `has`, `get`, `get_record`, `put`,
+  `register_hit`, `stats`, `clear`, and `evict` opened one that was then never
+  released. A long-running process backed by `SqliteLedger` (a memoized
+  function hit repeatedly, or the HTTP dedup server) would accumulate open
+  file descriptors without bound and eventually fail with "too many open
+  files". Every call now goes through a session helper that closes its
+  connection when it is done.
+- **An opaque object's key silently dropped state inherited from a base
+  class.** Keying an object with only the default `repr` (see 0.3.0) reads
+  `__slots__` to find its state; a subclass's `__slots__` only lists the
+  names *it* adds, not what a base class contributes, so any state held in an
+  inherited slot was missing from the key. Two instances that differed only
+  in that inherited slot then hashed identically — a real cache collision (a
+  wrong cached result served for a different logical input), not merely a
+  missed hit. `__slots__` is now collected across the whole MRO.
+  `__weakref__`, a runtime plumbing slot rather than user state, is skipped
+  like `__dict__`.
+- **A namespace containing a glob or SQL `LIKE` metacharacter leaked into an
+  unrelated namespace.** `Ledger.stats("a*b")` / `.clear("a*b")` used the
+  namespace directly in a glob pattern, so `*` (or `?`, `[`) matched more than
+  the literal namespace name; `SqliteLedger.stats("a%")` / `.clear("a%")` had
+  the same problem with SQL `LIKE`'s `%`. Namespaces are normally a
+  `module.qualname` and never hit this, but a custom namespace could. Both
+  backends now escape the namespace before building the pattern.
+- **`RemoteLedger` / the HTTP server could not address a key whose namespace
+  contains a `/`.** `GET /result/{key}` only matched the first path segment,
+  so a non-default namespace with a slash silently 404'd instead of finding
+  its result (a known, documented limitation of 0.3.0). The route now uses a
+  path converter that matches the whole key.
+
 ## [0.3.0] - 2026-07-24
 
 ### Added
