@@ -30,14 +30,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Core is stdlib-only; test the full supported range on Linux and, on
-        # the newest version, macOS to catch POSIX path/OS regressions. Windows
-        # is intentionally left out of the matrix for now — its runners are slow
-        # and the fcntl-less lock fallback is low priority today; revisit later.
+        # Core is stdlib-only. Test the full supported range on Linux (🐧), and
+        # on the newest Python add macOS (🍎) and Windows (🪟) so the install
+        # procedure and the whole test suite are verified on all three OSes a
+        # user might install on. macOS and Windows run one version each (newest)
+        # to keep the matrix light while still catching POSIX vs Windows path,
+        # atomic-replace, and fcntl-less-lock-fallback regressions.
         os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
         include:
           - os: macos-latest
+            python-version: "3.13"
+          - os: windows-latest
             python-version: "3.13"
     steps:
       - uses: actions/checkout@v4

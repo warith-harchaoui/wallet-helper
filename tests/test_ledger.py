@@ -364,6 +364,29 @@ def test_concurrent_hits_are_not_lost(ledger: Ledger) -> None:
     assert ledger.stats()["hits"] == 200
 
 
+def test_hit_counter_survives_without_fcntl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The Windows path: no fcntl, so the cross-process advisory lock is skipped
+    # and only the in-process threading lock guards register_hit. Simulate it on
+    # any OS by blanking fcntl, and confirm concurrent hits from several threads
+    # still all land (the in-process guarantee holds even without fcntl).
+    import wallet_helper.ledger as ledger_module
+
+    monkeypatch.setattr(ledger_module, "fcntl", None)
+    ledger = Ledger(tmp_path)
+    ledger.put("ns_k", "v")
+
+    def bump() -> None:
+        for _ in range(50):
+            ledger.register_hit("ns_k")
+
+    threads = [threading.Thread(target=bump) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert ledger.stats()["hits"] == 200
+
+
 def test_max_entries_auto_evicts(tmp_path: Path) -> None:
     ledger = Ledger(tmp_path, max_entries=2)
     ledger.put("ns_a", 1)

@@ -44,6 +44,17 @@ semantic versioning.
   `osh.temporary_folder`, per that file's own convention) is now executed as
   a real test (`tests/test_examples_md.py`), so a future change that breaks
   the cookbook fails CI instead of only being noticed by a reader.
+- The `fcntl`-less lock fallback (the Windows path, where `register_hit` is
+  guarded only by the in-process lock) now has a dedicated test that simulates
+  a missing `fcntl` on any OS and proves concurrent hits are still not lost.
+
+### CI
+- **Install and test on all three target OSes.** The test matrix now adds
+  Windows (🪟) alongside Linux (🐧) and macOS (🍎), each on the newest Python,
+  so the install procedure and the full suite are verified on every platform
+  the README tells a user to install on. macOS and Windows run one Python
+  version each to keep the matrix light. This re-adds the Windows job that
+  0.3.0 had dropped.
 
 ## [0.3.0] - 2026-07-24
 
