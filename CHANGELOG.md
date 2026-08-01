@@ -39,6 +39,12 @@ semantic versioning.
   its result (a known, documented limitation of 0.3.0). The route now uses a
   path converter that matches the whole key.
 
+### Testing
+- Every self-contained code block in `EXAMPLES.md` (the ones using
+  `osh.temporary_folder`, per that file's own convention) is now executed as
+  a real test (`tests/test_examples_md.py`), so a future change that breaks
+  the cookbook fails CI instead of only being noticed by a reader.
+
 ## [0.3.0] - 2026-07-24
 
 ### Added
