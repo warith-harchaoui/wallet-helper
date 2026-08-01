@@ -153,7 +153,7 @@ make test      # pytest and doctests
 make           # lint then test
 ```
 
-CI runs the same gate on a Python 3.10 to 3.13 matrix on Linux (🐧), and on the newest Python also on macOS (🍎) and Windows (🪟), so the install procedure and the full test suite are verified on all three platforms you might install on. macOS and Windows run one Python version each (the newest) to keep the matrix light while still catching POSIX-versus-Windows path, atomic-replace, and `fcntl`-less lock-fallback regressions.
+CI runs the full test suite on a Python 3.10 to 3.13 matrix on Linux (🐧), plus the newest Python on macOS (🍎). On top of that, a separate lightweight **install smoke test** runs on all three platforms you might install on (🐧 Linux, 🍎 macOS, 🪟 Windows): it installs the package and its extras, then checks that it imports, that both command-line tools respond, and that a memoize round-trip runs the work exactly once. So installation is verified everywhere, while the exhaustive suite runs where it is fast and reliable (the cross-process test leans on `spawn`-based multiprocessing, which is minutes-slow on Windows runners).
 
 ## The Promise
 

@@ -1,10 +1,17 @@
-# Continuous integration for wallet-helper (gist rules 15, 17, 18).
+# Continuous integration for wallet-helper.
 #
-# Two jobs mirror the local `make` gate so nothing that passes locally is
-# surprised by CI:
-#   - lint: ruff check (PEP 8 + import order enforced automatically).
-#   - test: pytest across the supported Python matrix, with the optional
-#     surfaces (click / fastapi) installed so every surface is exercised.
+# Three jobs:
+#   - lint:  ruff check (PEP 8 + import order enforced automatically).
+#   - test:  the full pytest suite across the supported Python range, with the
+#            optional surfaces (click / fastapi) installed so every surface is
+#            exercised. Linux (🐧) on every version, macOS (🍎) on the newest.
+#            The exhaustive suite runs where it is fast and reliable.
+#   - smoke: the install procedure itself, on all three OSes a user installs on
+#            (🐧 Linux, 🍎 macOS, 🪟 Windows). It installs the package + extras
+#            and then proves it actually works: import, both CLI entry points,
+#            and a real memoize round-trip against the on-disk store. This is
+#            what "verified on Windows too" means here, without paying for the
+#            whole (spawn-heavy, minutes-slow on Windows) suite on that runner.
 name: ci
 
 on:
@@ -30,18 +37,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Core is stdlib-only. Test the full supported range on Linux (🐧), and
-        # on the newest Python add macOS (🍎) and Windows (🪟) so the install
-        # procedure and the whole test suite are verified on all three OSes a
-        # user might install on. macOS and Windows run one version each (newest)
-        # to keep the matrix light while still catching POSIX vs Windows path,
-        # atomic-replace, and fcntl-less-lock-fallback regressions.
+        # Core is stdlib-only. Full range on Linux; newest Python also on macOS
+        # to catch POSIX path / atomic-replace regressions between the two.
         os: [ubuntu-latest]
         python-version: ["3.10", "3.11", "3.12", "3.13"]
         include:
           - os: macos-latest
-            python-version: "3.13"
-          - os: windows-latest
             python-version: "3.13"
     steps:
       - uses: actions/checkout@v4
@@ -52,3 +53,28 @@ jobs:
         run: python -m pip install -e ".[dev,cli,api]"
       - name: Run tests
         run: python -m pytest -q
+
+  # The install procedure, exercised on every OS the README tells a user to
+  # install on. Fast and portable: no spawn Pools, no long-polls, just proof
+  # that a fresh install imports, exposes both CLIs, and memoizes for real.
+  smoke:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install package + CLI/API extras
+        run: python -m pip install -e ".[cli,api]"
+      - name: Import and report version
+        run: python -c "import wallet_helper as wh; print('wallet-helper', wh.__version__)"
+      - name: Both CLI entry points respond
+        run: |
+          wallet-helper --version
+          wallet-helper-click --version
+      - name: Memoize round-trip runs the work exactly once
+        run: python scripts/smoke_install.py

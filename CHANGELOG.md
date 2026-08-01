@@ -49,17 +49,19 @@ semantic versioning.
   a missing `fcntl` on any OS and proves concurrent hits are still not lost.
 
 ### CI
-- **Install and test on all three target OSes.** The test matrix now adds
-  Windows (🪟) alongside Linux (🐧) and macOS (🍎), each on the newest Python,
-  so the install procedure and the full suite are verified on every platform
-  the README tells a user to install on. macOS and Windows run one Python
-  version each to keep the matrix light. This re-adds the Windows job that
-  0.3.0 had dropped. The one exception is the multi-process test's driver: it
-  uses a `spawn`-based `multiprocessing.Pool`, which is minutes-slow and
-  fragile on Windows runners, so that single test is skipped there. The
-  guarantee it proves rides on SQLite's atomic lease, which is OS-independent
-  and still fully exercised on Linux and macOS; every other test, including
-  the in-process single-flight and the `fcntl`-less fallback, runs on Windows.
+- **Verify the install procedure on all three target OSes.** A new `smoke`
+  job installs the package and its extras on Linux (🐧), macOS (🍎), and
+  Windows (🪟), then proves a fresh install works: it imports, both
+  command-line entry points respond, and a memoize round-trip runs the work
+  exactly once (`scripts/smoke_install.py`). This is what makes Windows a
+  first-class install target again without paying for the whole suite on that
+  runner: the exhaustive `pytest` suite still runs on Linux (full version
+  range) and macOS (newest), where it is fast and reliable. The reason the
+  full suite is not run on Windows is the cross-process test, whose driver is
+  a `spawn`-based `multiprocessing.Pool` that is minutes-slow on Windows
+  runners; the guarantee it proves rides on SQLite's atomic lease, which is
+  OS-independent. That test is also marked to skip on Windows for anyone who
+  runs the suite on a Windows dev machine.
 
 ## [0.3.0] - 2026-07-24
 

@@ -156,7 +156,7 @@ make test      # pytest et doctests
 make           # lint puis test
 ```
 
-La CI applique le même gate sur une matrice Python 3.10 à 3.13 sous Linux (🐧), et sur la version la plus récente aussi sous macOS (🍎) et Windows (🪟), pour que la procédure d'installation et toute la suite de tests soient vérifiées sur les trois plateformes où vous pourriez installer. macOS et Windows tournent sur une seule version de Python chacun (la plus récente), pour garder la matrice légère tout en attrapant les régressions de chemins POSIX-contre-Windows, de remplacement atomique et de repli de verrou sans `fcntl`.
+La CI exécute toute la suite de tests sur une matrice Python 3.10 à 3.13 sous Linux (🐧), plus la version la plus récente sous macOS (🍎). En complément, un **test de fumée d'installation** léger tourne sur les trois plateformes où vous pourriez installer (🐧 Linux, 🍎 macOS, 🪟 Windows) : il installe le paquet et ses extras, puis vérifie qu'il s'importe, que les deux outils en ligne de commande répondent, et qu'un aller-retour de mémoïsation n'exécute le travail qu'une seule fois. L'installation est donc vérifiée partout, tandis que la suite exhaustive tourne là où elle est rapide et fiable (le test entre processus s'appuie sur le multiprocessing par `spawn`, très lent sur les runners Windows).
 
 ## La promesse
 
