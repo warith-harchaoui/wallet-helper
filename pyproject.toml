@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wallet-helper"
-version = "0.3.1"
+version = "1.0.0"
 description = "Never run the same heavy call twice. Persistent, content-addressed memoization for expensive calls (a paid API request, a slow model, any heavy function), with single-flight so concurrent identical calls collapse into one, across process restarts and, optionally, across processes."
 readme = "README.md"
 requires-python = ">=3.10,<3.14"
@@ -14,7 +14,7 @@ authors = [
 ]
 keywords = ["cache", "memoize", "memoization", "single-flight", "deduplication", "content-addressed", "persistent", "api"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
@@ -27,7 +27,7 @@ classifiers = [
 ]
 # One dependency: os-helper, the shared utility layer of the AI Helpers suite
 # (content-addressed hashing, temp folders, path helpers, logging).
-dependencies = ["os-helper>=1.7,<2"]
+dependencies = ["os-helper>=2.0.0,<3"]
 
 [project.optional-dependencies]
 # The command-line and HTTP surfaces are opt-in extras; install what you need.

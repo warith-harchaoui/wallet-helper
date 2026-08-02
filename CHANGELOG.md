@@ -4,6 +4,20 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [1.0.0] - 2026-08-02
+
+### Changed
+
+- **Requires os-helper 2.x** (`os-helper>=2.0.0,<3`, was `>=1.7,<2`). The
+  previous `<2` cap excluded the suite's new foundation, so this is a hard
+  requirement bump. Logging and content-addressed hashing continue to route
+  through os-helper, now on its stable 2.x contract.
+- First stable release: classifier moved to `Development Status :: 5 -
+  Production/Stable`. The memoize / single-flight API is considered stable.
+- CI trimmed to a super-light single-Python test gate (ruff + pytest block); the
+  fast cross-OS `smoke` job is kept because wallet-helper's file locking is
+  OS-specific (POSIX `fcntl` vs Windows).
+
 ## [0.3.1] - 2026-08-01
 
 ### Fixed
