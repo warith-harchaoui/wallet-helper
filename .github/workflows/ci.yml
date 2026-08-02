@@ -28,7 +28,10 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install ruff
-        run: python -m pip install "ruff>=0.6"
+        # Pinned: an unpinned install let ruff 0.16 make Markdown code-fence
+        # formatting the default, silently breaking format-check on doc examples.
+        # Bump this deliberately, not by surprise.
+        run: python -m pip install "ruff==0.15.21"
       - name: Lint
         run: ruff check .
 

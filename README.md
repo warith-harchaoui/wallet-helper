@@ -47,14 +47,14 @@ The only requirement is **Python 3.10 to 3.13**. If you need Python itself:
 Install from GitHub, pinned to the release tag:
 
 ```bash
-pip install "git+https://github.com/warith-harchaoui/wallet-helper.git@v0.3.0"
+pip install wallet-helper
 ```
 
 The command-line and HTTP surfaces are opt-in extras:
 
 ```bash
-pip install "wallet-helper[cli] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.3.0"   # click CLI variant    -> click
-pip install "wallet-helper[api] @ git+https://github.com/warith-harchaoui/wallet-helper.git@v0.3.0"   # HTTP dedup server     -> fastapi, uvicorn
+pip install "wallet-helper[cli]"   # click CLI variant    -> click
+pip install "wallet-helper[api]"   # HTTP dedup server     -> fastapi, uvicorn
 ```
 
 ## Quick start

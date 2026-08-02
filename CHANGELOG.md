@@ -4,6 +4,29 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [1.0.1] - 2026-08-02
+
+Documentation-only follow-up. The install commands now point at PyPI
+(`pip install wallet-helper`) instead of a pinned git tag, so the rendered PyPI
+project page never drifts to an old version.
+
+### Fixed
+
+- README / LISEZMOI install commands no longer self-pin to a git tag (`@v0.3.0`);
+  they use `pip install wallet-helper`, which always resolves to the latest
+  published release.
+
+### Added
+
+- `tests/test_readme_install_pin.py` guards against the stale git self-pin ever
+  returning to any Markdown file.
+
+### Changed
+
+- CI pins `ruff==0.15.21` (was the unpinned `ruff>=0.6`), matching the rest of
+  the suite so a surprise ruff upgrade cannot flip lint behaviour under the
+  build.
+
 ## [1.0.0] - 2026-08-02
 
 ### Changed
