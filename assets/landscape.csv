@@ -1,15 +1,16 @@
-Caching,Persistent,Content-addresses input,In-process single-flight,Cross-process single-flight,TTL / expiry,Server for many clients,Decorator,Local (no service)
-wallet-helper,5,5,5,5,5,4,5,4
-functools.lru_cache,1,1,1,1,1,1,5,5
-joblib.Memory,5,3,1,1,1,1,4,3
-diskcache,5,2,3,3,5,1,4,4
-cachier,4,1,1,3,4,1,4,3
-requests-cache,5,1,1,1,5,1,2,3
-dogpile.cache,4,1,5,4,5,2,4,2
-Go singleflight,1,1,5,1,1,1,1,5
-AWS Powertools Idempotency,4,2,2,5,4,2,4,1
-Stripe idempotency keys,3,1,4,5,3,5,1,1
-litellm cache,4,1,1,3,3,1,1,1
-cashews,4,1,4,4,5,2,5,2
-cacheme,3,1,5,3,4,1,4,2
-GPTCache (semantic),4,2,1,2,3,2,2,2
+Caching,Persistent,Content-addresses input,In-process single-flight,Cross-process single-flight,TTL / expiry,Server for many clients,Decorator,Async support,Local (no service)
+wallet-helper,5,5,5,5,5,4,5,5,4
+functools.lru_cache,1,1,1,1,1,1,5,1,5
+joblib.Memory,5,3,1,1,1,1,4,1,3
+diskcache,5,2,3,3,5,1,4,1,4
+cachier,4,1,1,3,4,1,4,1,3
+requests-cache,5,1,1,1,5,1,2,1,3
+dogpile.cache,4,1,5,4,5,2,4,1,2
+Redis,4,1,1,3,5,5,1,4,1
+Go singleflight,1,1,5,1,1,1,1,3,5
+AWS Powertools Idempotency,4,2,2,5,4,2,4,2,1
+Stripe idempotency keys,3,1,4,5,3,5,1,3,1
+litellm cache,4,1,1,3,3,1,1,4,1
+cashews,4,1,4,4,5,2,5,5,2
+cacheme,3,1,5,3,4,1,4,5,2
+GPTCache (semantic),4,2,1,2,3,2,2,3,2
