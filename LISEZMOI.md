@@ -24,8 +24,8 @@ Par [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui)
 
 Un appel lourd, on ne veut pas le payer deux fois. Deux causes de double exécution :
 
-1. Vous le rappelez la semaine suivante. wallet-helper stocke chaque résultat sur disque, adressé par contenu à partir d'un namespace et des entrées (arguments, contenu d'un fichier, ou octets), donc la répétition est servie depuis le stockage plutôt que recalculée.
-2. Vous le lancez deux fois en même temps. Deux threads, ou deux processus, démarrent le même appel lent avant que l'un ne finisse. wallet-helper laisse l'un l'exécuter et fait attendre les autres pour ce résultat, donc le travail n'a lieu qu'une fois.
+1. Vous le rappelez la semaine suivante. wallet-helper stocke chaque résultat sur disque, adressé par contenu à partir d'un namespace et des entrées (arguments, contenu d'un fichier ou octets), donc la répétition est servie depuis le stockage plutôt que recalculée.
+2. Vous le lancez deux fois en même temps. Deux threads ou deux processus, démarrent le même appel lent avant que l'un ne finisse. wallet-helper laisse l'un l'exécuter et fait attendre les autres pour ce résultat, donc le travail n'a lieu qu'une fois.
 
 C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouche et deux entrées différentes n'entrent jamais en collision. Le stockage par défaut est un dossier de fichiers JSON, simple à lire et à supprimer. Un backend SQLite ajoute un stockage partagé et sûr en concurrence, plus le single-flight entre processus. Un petit serveur HTTP centralise cette déduplication pour plusieurs clients.
 
@@ -33,9 +33,9 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 
 Ce qui est livré aujourd'hui :
 
-- **bibliothèque** avec `Wallet` et le décorateur `@memoize` (synchrone et `async def`), sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé), ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
-- **single-flight entre processus** via le backend SQLite ou le serveur, avec un jeton de fencing pour que le travail s'exécute une seule fois même si un leader plante, un délai de bail, et un heartbeat pour les jobs longs.
-- **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, une politique `evict` par âge ou taille, et un plafond automatique (`max_entries`).
+- **bibliothèque** avec `Wallet` et le décorateur `@memoize` (synchrone et `async def`), sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé) ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
+- **single-flight entre processus** via le backend SQLite ou le serveur, avec un jeton de fencing pour que le travail s'exécute une seule fois même si un leader plante, un délai de bail et un heartbeat pour les jobs longs.
+- **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, une politique `evict` par âge ou taille et un plafond automatique (`max_entries`).
 - **`wallet-helper` / `cli_argparse`** et **`wallet-helper-click`** : inspecter, vider et éviter le stockage.
 - **serveur HTTP de déduplication** (l'extra `[api]`) plus `RemoteLedger`, pour que plusieurs clients sur n'importe quelle machine partagent un point de déduplication.
 
@@ -75,7 +75,7 @@ transcribe("reunion.wav")   # s'exécute, stocke le résultat
 transcribe("reunion.wav")   # servi depuis le stockage, pas de second appel
 ```
 
-Un argument fichier est identifié par son contenu, pas par son chemin. Le même fichier atteint sous un autre nom, ou une copie octet pour octet dans un autre dossier, fait donc mouche, et deux fichiers différents ne se télescopent jamais même si leurs noms se ressemblent :
+Un argument fichier est identifié par son contenu, pas par son chemin. Le même fichier atteint sous un autre nom ou une copie octet pour octet dans un autre dossier, fait donc mouche et deux fichiers différents ne se télescopent jamais même si leurs noms se ressemblent :
 
 ```python
 transcribe("reunion.wav")           # s'exécute
@@ -97,7 +97,7 @@ transcribe.cache_info()    # {'entries': 1, 'hits': 1}
 transcribe.cache_clear()   # oublier les résultats stockés de cette fonction
 ```
 
-Fixez une fenêtre de fraîcheur avec `ttl` (secondes), et partagez un stockage sur tout un parc en pointant vers un serveur :
+Fixez une fenêtre de fraîcheur avec `ttl` (secondes) et partagez un stockage sur tout un parc en pointant vers un serveur :
 
 ```python
 from wallet_helper import Wallet, RemoteLedger, memoize
@@ -112,7 +112,7 @@ def transcribe(path):
     return call_some_paid_api(path)
 ```
 
-Les fonctions asynchrones marchent pareil. C'est le résultat qui est mis en cache, jamais la coroutine, et les `await` concurrents fusionnent :
+Les fonctions asynchrones marchent pareil. C'est le résultat qui est mis en cache, jamais la coroutine et les `await` concurrents fusionnent :
 
 ```python
 @memoize
@@ -140,9 +140,9 @@ wallet-helper fait partie de la suite AI Helpers et s'appuie sur [os-helper](htt
 
 | Pièce | Rôle |
 |---|---|
-| `make_key` | Hachage de contenu d'un namespace et d'un payload (arguments, contenu de fichier, ou octets). |
+| `make_key` | Hachage de contenu d'un namespace et d'un payload (arguments, contenu de fichier ou octets). |
 | `Ledger` | Stockage par défaut : un fichier JSON par entrée. |
-| `SqliteLedger` | Un fichier SQLite partagé, compteurs atomiques, TTL, et le bail claim/submit/release/extend. |
+| `SqliteLedger` | Un fichier SQLite partagé, compteurs atomiques, TTL et le bail claim/submit/release/extend. |
 | `RemoteLedger` | Un `LedgerLike` qui parle au serveur, donc `Wallet(RemoteLedger(url))` déduplique sur tout un parc. |
 | `Wallet` / `memoize` | Porte d'entrée : recherche, single-flight (en processus ou via le bail), puis stockage. |
 | `wallet_helper.api` | Serveur HTTP qui centralise la déduplication pour plusieurs clients. |
@@ -156,19 +156,19 @@ make test      # pytest et doctests
 make           # lint puis test
 ```
 
-La CI exécute toute la suite de tests sur une matrice Python 3.10 à 3.13 sous Linux (🐧), plus la version la plus récente sous macOS (🍎). En complément, un **test de fumée d'installation** léger tourne sur les trois plateformes où vous pourriez installer (🐧 Linux, 🍎 macOS, 🪟 Windows) : il installe le paquet et ses extras, puis vérifie qu'il s'importe, que les deux outils en ligne de commande répondent, et qu'un aller-retour de mémoïsation n'exécute le travail qu'une seule fois. L'installation est donc vérifiée partout, tandis que la suite exhaustive tourne là où elle est rapide et fiable (le test entre processus s'appuie sur le multiprocessing par `spawn`, très lent sur les runners Windows).
+La CI exécute toute la suite de tests sur une matrice Python 3.10 à 3.13 sous Linux (🐧), plus la version la plus récente sous macOS (🍎). En complément, un **test de fumée d'installation** léger tourne sur les trois plateformes où vous pourriez installer (🐧 Linux, 🍎 macOS, 🪟 Windows) : il installe le paquet et ses extras, puis vérifie qu'il s'importe, que les deux outils en ligne de commande répondent et qu'un aller-retour de mémoïsation n'exécute le travail qu'une seule fois. L'installation est donc vérifiée partout, tandis que la suite exhaustive tourne là où elle est rapide et fiable (le test entre processus s'appuie sur le multiprocessing par `spawn`, très lent sur les runners Windows).
 
 ## La promesse
 
 wallet-helper fait partie d'une suite « local-first », soucieuse de
-souveraineté, et comme os-helper c'est une petite boîte à outils, pas un
+souveraineté et comme os-helper c'est une petite boîte à outils, pas un
 service. Plutôt que d'en faire un argument marketing, voici la réalité honnête,
 cas par cas :
 
 1. **Garanti local.** Le `Ledger` par défaut (un dossier de fichiers JSON) et le
    `SqliteLedger` (un seul fichier) vivent sous `$WALLET_HELPER_DIR`, ou
    `~/.cache/wallet-helper` — sur votre machine. Rien n'est envoyé, aucune
-   télémétrie, aucun compte. Vos résultats mis en cache, et les entrées qui les
+   télémétrie, aucun compte. Vos résultats mis en cache et les entrées qui les
    indexent, ne quittent jamais le disque.
 
 2. **Impossible d'être local — la réserve.** wallet-helper existe pour *éviter*

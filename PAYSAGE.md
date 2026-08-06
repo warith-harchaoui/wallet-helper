@@ -95,7 +95,7 @@ La carte est un résumé en 2D des 9 critères : à lire comme une forme, pas co
   des invites *similaires* via des embeddings et un seuil de similarité, troquant
   l'exactitude contre un taux de succès plus élevé sur les paraphrases.
   wallet-helper est l'inverse par conception : une correspondance exacte, adressée
-  par contenu, ou un échec, sans modèle dans la boucle. Les deux sont
+  par contenu ou un échec, sans modèle dans la boucle. Les deux sont
   complémentaires, pas concurrents.
 - **Pas un cache de protocole HTTP.** `requests-cache` et le plus récent
   [hishel](https://github.com/karpetrosyan/hishel) (mise en cache RFC 9111 pour
@@ -111,13 +111,13 @@ wallet-helper emprunte délibérément des idées éprouvées :
 - Le modèle leader/suiveur d'attente-et-partage, de Go `singleflight` et du
   `get_or_create` de `dogpile.cache`, pour que le second appelant reçoive le
   résultat du premier au lieu d'échouer.
-- Un bail avec délai d'expiration sur le marqueur en cours, et sa suppression en
+- Un bail avec délai d'expiration sur le marqueur en cours et sa suppression en
   cas d'échec, d'AWS Powertools Idempotency, pour qu'un leader planté ne bloque
   pas les attendeurs et qu'un appel échoué ne soit pas mis en cache.
 - La réclamation atomique avec `BEGIN IMMEDIATE` et la journalisation en écriture
   anticipée sur SQLite, pour que l'étape vérifier-puis-réserver soit exempte de
   course entre processus.
 - `cache_info()` et `cache_clear()` sur la fonction décorée, de
-  `functools.lru_cache`, et l'éviction par namespace, des tags de `diskcache`.
+  `functools.lru_cache` et l'éviction par namespace, des tags de `diskcache`.
 - La durée de vie par entrée et le stale-while-revalidate, de `requests-cache`
   (`expire_after`), `diskcache` (`expire`) et `dogpile.cache`.
