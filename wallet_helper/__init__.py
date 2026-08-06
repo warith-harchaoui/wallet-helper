@@ -23,7 +23,7 @@ from wallet_helper.ledger import Ledger, LedgerLike, make_key
 from wallet_helper.remote import RemoteLedger
 from wallet_helper.sqlite_ledger import SqliteLedger
 
-__version__ = "0.3.1"
+__version__ = "1.1.0"
 
 __all__ = [
     "Ledger",

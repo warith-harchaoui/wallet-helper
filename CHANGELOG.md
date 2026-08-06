@@ -6,6 +6,8 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-06
+
 ### Added
 
 - **MCP surface** (`wallet_helper.mcp`, `[mcp]` extra, entry point
