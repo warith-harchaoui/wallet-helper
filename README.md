@@ -35,6 +35,7 @@ What ships today:
 - **time-to-live and eviction**: per-entry `ttl`, optional stale-while-revalidate, an `evict` policy by age or size, and an automatic size cap (`max_entries`).
 - **`wallet-helper` / `cli_argparse`** and **`wallet-helper-click`**: inspect, clear, and evict the store.
 - **HTTP dedup server** (the `[api]` extra) plus `RemoteLedger`, so many clients on any host share one dedup point.
+- **MCP tools** (the `[mcp]` extra): the same HTTP dedup server exposed as MCP tools for any MCP-aware agent host.
 
 ## Installation
 
@@ -55,7 +56,10 @@ The command-line and HTTP surfaces are opt-in extras:
 ```bash
 pip install "wallet-helper[cli]"   # click CLI variant    -> click
 pip install "wallet-helper[api]"   # HTTP dedup server     -> fastapi, uvicorn
+pip install "wallet-helper[mcp]"   # MCP tools + the above -> fastapi-mcp
 ```
+
+Run the MCP server with `wallet-helper-mcp` (HTTP API + an `/mcp` endpoint, same app).
 
 ## Quick start
 

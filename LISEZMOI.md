@@ -38,6 +38,7 @@ Ce qui est livré aujourd'hui :
 - **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, une politique `evict` par âge ou taille et un plafond automatique (`max_entries`).
 - **`wallet-helper` / `cli_argparse`** et **`wallet-helper-click`** : inspecter, vider et éviter le stockage.
 - **serveur HTTP de déduplication** (l'extra `[api]`) plus `RemoteLedger`, pour que plusieurs clients sur n'importe quelle machine partagent un point de déduplication.
+- **outils MCP** (l'extra `[mcp]`) : le même serveur HTTP de déduplication exposé comme outils MCP pour tout hôte agentique compatible.
 
 ## Installation
 
@@ -58,7 +59,10 @@ Les surfaces ligne de commande et HTTP sont des extras optionnels :
 ```bash
 pip install "wallet-helper[cli]"   # variante CLI click    -> click
 pip install "wallet-helper[api]"   # serveur HTTP de dédup -> fastapi, uvicorn
+pip install "wallet-helper[mcp]"   # outils MCP + ce qui précède -> fastapi-mcp
 ```
+
+Lancez le serveur MCP avec `wallet-helper-mcp` (API HTTP + un endpoint `/mcp`, même app).
 
 ## Prise en main
 

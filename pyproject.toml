@@ -36,12 +36,24 @@ dependencies = ["os-helper>=2.0.0,<3"]
 cli = ["click>=8.1,<9"]
 # FastAPI HTTP surface: the centralized dedup server.
 api = ["fastapi>=0.110", "uvicorn>=0.29"]
+# MCP surface (wallet_helper.mcp) — exposes the SAME FastAPI app from [api] as
+# MCP tools via fastapi-mcp; needs the api extra's runtime deps too.
+mcp = [
+    "wallet-helper[api]",
+    "fastapi-mcp>=0.3,<1",
+    # Cap the MCP SDK below 2.0: fastapi-mcp 0.4.0 declares only `mcp>=1.12`
+    # (no upper bound), but mcp 2.0.0 changed the low-level `Server.__init__`
+    # signature and breaks fastapi-mcp at import. Pin to the 1.x line until
+    # fastapi-mcp ships a 2.x-compatible release (same issue hit md2star).
+    "mcp>=1.12,<2",
+]
 # httpx powers FastAPI's TestClient, exercised by the api tests.
-dev = ["pytest>=8", "ruff>=0.6", "httpx>=0.27"]
+dev = ["pytest>=8", "ruff>=0.6", "httpx>=0.27", "fastapi-mcp>=0.3,<1", "mcp>=1.12,<2"]
 
 [project.scripts]
 wallet-helper = "wallet_helper.cli_argparse:main"
 wallet-helper-click = "wallet_helper.cli_click:main"
+wallet-helper-mcp = "wallet_helper.mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/warith-harchaoui/wallet-helper"

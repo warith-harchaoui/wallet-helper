@@ -4,6 +4,17 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [Unreleased]
+
+### Added
+
+- **MCP surface** (`wallet_helper.mcp`, `[mcp]` extra, entry point
+  `wallet-helper-mcp`): exposes the existing FastAPI app (claim/submit/
+  release/extend/result/stats/clear/evict) as MCP tools via `fastapi-mcp`,
+  mirroring the pattern already shipped in `standpoint` / `vocal-helper` /
+  `md2star` / `os-helper`. Closes the CLI/API/MCP surface gap for
+  wallet-helper flagged in `ai-helpers/.private/do.md` §7.
+
 ## [1.0.1] - 2026-08-02
 
 Documentation-only follow-up. The install commands now point at PyPI
