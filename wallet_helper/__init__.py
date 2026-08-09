@@ -16,6 +16,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 from wallet_helper.guard import Wallet, default_wallet, memoize
@@ -23,7 +24,7 @@ from wallet_helper.ledger import Ledger, LedgerLike, make_key
 from wallet_helper.remote import RemoteLedger
 from wallet_helper.sqlite_ledger import SqliteLedger
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 __all__ = [
     "Ledger",

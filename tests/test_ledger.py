@@ -4,6 +4,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 import threading
@@ -351,7 +352,7 @@ def test_json_store_filename_is_windows_safe(tmp_path: Path) -> None:
     # OS-independent: it asserts on the filename, so it guards the Windows path
     # even when the suite runs on POSIX (where those characters happen to be legal).
     ledger = Ledger(tmp_path)
-    key = make_key('mod.outer.<locals>.inner:weird*name?', {"x": 1})
+    key = make_key("mod.outer.<locals>.inner:weird*name?", {"x": 1})
     ledger.put(key, "v")
     assert ledger.get(key) == "v"  # round-trips despite the forbidden characters
     forbidden = set('<>:"/\\|?*')

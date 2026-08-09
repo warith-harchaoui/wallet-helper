@@ -31,6 +31,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -43,8 +44,7 @@ try:
     from pydantic import BaseModel
 except ModuleNotFoundError as exc:  # pragma: no cover - only hit without fastapi
     raise SystemExit(
-        "The HTTP surface needs the optional 'api' extra. Install it with\n"
-        "  pip install 'wallet-helper[api]'"
+        "The HTTP surface needs the optional 'api' extra. Install it with\n  pip install 'wallet-helper[api]'"
     ) from exc
 
 from wallet_helper import __version__

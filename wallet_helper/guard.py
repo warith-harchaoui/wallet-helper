@@ -37,6 +37,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -241,7 +242,9 @@ class Wallet:
             return await self._acall_via_claim(key, fn, ttl)
         return await self._acall_local(key, fn, ttl, stale_while_revalidate)
 
-    async def _acall_local(self, key: str, fn: Callable[[], Awaitable[Any]], ttl: float | None, swr: bool) -> tuple[Any, bool]:
+    async def _acall_local(
+        self, key: str, fn: Callable[[], Awaitable[Any]], ttl: float | None, swr: bool
+    ) -> tuple[Any, bool]:
         """In-process async path: freshness, then async single-flight."""
         record = self.ledger.get_record(key)
         if record is not None and is_fresh(record):

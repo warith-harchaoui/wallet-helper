@@ -4,6 +4,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,10 +36,10 @@ def test_claim_submit_result_dedups(client: TestClient) -> None:
     call = {"namespace": "asr", "payload": {"file": "a.wav"}}
 
     first = client.post("/claim", json=call).json()
-    assert first["status"] == "leased"           # first caller computes
+    assert first["status"] == "leased"  # first caller computes
 
     second = client.post("/claim", json=call).json()
-    assert second["status"] == "pending"          # a concurrent caller waits
+    assert second["status"] == "pending"  # a concurrent caller waits
 
     client.post("/submit", json={**call, "result": {"text": "hi"}})
 
@@ -49,8 +50,8 @@ def test_claim_submit_result_dedups(client: TestClient) -> None:
 def test_result_long_poll_returns_after_submit(client: TestClient) -> None:
     call = {"namespace": "asr", "payload": {"file": "b.wav"}}
     key = client.post("/key", json=call).json()["key"]
-    client.post("/claim", json=call)                       # lease it
-    client.post("/submit", json={**call, "result": 42})    # store it
+    client.post("/claim", json=call)  # lease it
+    client.post("/submit", json={**call, "result": 42})  # store it
     got = client.get(f"/result/{key}", params={"wait": 1.0}).json()
     assert got["result"] == 42
 

@@ -4,6 +4,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 import time
@@ -27,10 +28,10 @@ def test_ttl_expires_and_recomputes(tmp_path: Path) -> None:
 
     _, c1 = wallet.call("ns", {"x": 1}, heavy, ttl=0.05)
     _, c2 = wallet.call("ns", {"x": 1}, heavy, ttl=0.05)
-    assert (c1, c2) == (False, True)   # fresh hit the second time
+    assert (c1, c2) == (False, True)  # fresh hit the second time
     time.sleep(0.06)
     _, c3 = wallet.call("ns", {"x": 1}, heavy, ttl=0.05)
-    assert c3 is False and runs == 2   # expired, so it recomputed
+    assert c3 is False and runs == 2  # expired, so it recomputed
 
 
 def test_stale_while_revalidate_serves_stale_then_refreshes(tmp_path: Path) -> None:

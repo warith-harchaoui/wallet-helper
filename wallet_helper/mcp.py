@@ -21,14 +21,14 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 try:
     from fastapi_mcp import FastApiMCP
 except ModuleNotFoundError as exc:  # pragma: no cover - only hit without the extra
     raise SystemExit(
-        "The MCP surface needs the optional 'mcp' extra. Install it with\n"
-        "  pip install 'wallet-helper[mcp]'"
+        "The MCP surface needs the optional 'mcp' extra. Install it with\n  pip install 'wallet-helper[mcp]'"
     ) from exc
 
 # Reuse the exact same FastAPI app: MCP is a thin wrapper on top, no new routes.

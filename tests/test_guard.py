@@ -4,6 +4,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 import threading
@@ -71,13 +72,13 @@ def test_concurrent_identical_calls_run_once(wallet: Wallet) -> None:
 
     leader = threading.Thread(target=worker)
     leader.start()
-    started.wait(timeout=5)          # ensure the leader is inside slow()
+    started.wait(timeout=5)  # ensure the leader is inside slow()
     follower = threading.Thread(target=worker)
     follower.start()
-    release.set()                    # let the leader finish
+    release.set()  # let the leader finish
     leader.join(timeout=5)
     follower.join(timeout=5)
 
-    assert runs == 1                                    # ran exactly once
-    assert {r[0] for r in results} == {"value"}         # both got the value
+    assert runs == 1  # ran exactly once
+    assert {r[0] for r in results} == {"value"}  # both got the value
     assert sorted(r[1] for r in results) == [False, True]  # one leader, one follower

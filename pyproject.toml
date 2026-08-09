@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wallet-helper"
-version = "1.1.0"
+version = "1.1.1"
 description = "Never run the same heavy call twice. Persistent, content-addressed memoization for expensive calls (a paid API request, a slow model, any heavy function), with single-flight so concurrent identical calls collapse into one, across process restarts and, optionally, across processes."
 readme = "README.md"
 requires-python = ">=3.10,<3.14"

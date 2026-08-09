@@ -16,6 +16,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,7 +46,9 @@ def main(argv: list[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(prog="wallet-helper", description="Inspect the wallet-helper ledger.")
     parser.add_argument("--version", action="version", version=f"wallet-helper {__version__}")
-    parser.add_argument("--dir", default=None, help="JSON ledger directory (default: $WALLET_HELPER_DIR or ~/.cache/wallet-helper).")
+    parser.add_argument(
+        "--dir", default=None, help="JSON ledger directory (default: $WALLET_HELPER_DIR or ~/.cache/wallet-helper)."
+    )
     parser.add_argument("--sqlite", default=None, help="Inspect a SQLite ledger file instead of the JSON directory.")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("stats", help="Show how many results are cached and how many calls they saved.")

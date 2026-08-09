@@ -19,6 +19,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 try:
@@ -42,7 +43,12 @@ def _open_ledger(directory: str | None, sqlite: str | None) -> LedgerLike:
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(__version__, prog_name="wallet-helper")
-@click.option("--dir", "cache_dir", default=None, help="JSON ledger directory (default: $WALLET_HELPER_DIR or ~/.cache/wallet-helper).")
+@click.option(
+    "--dir",
+    "cache_dir",
+    default=None,
+    help="JSON ledger directory (default: $WALLET_HELPER_DIR or ~/.cache/wallet-helper).",
+)
 @click.option("--sqlite", default=None, help="Inspect a SQLite ledger file instead of the JSON directory.")
 @click.pass_context
 def cli(ctx: click.Context, cache_dir: str | None, sqlite: str | None) -> None:

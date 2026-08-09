@@ -4,7 +4,14 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
-## [Unreleased]
+## [1.1.1] - 2026-08-09
+
+### Changed
+
+- **CI never enforced `ruff format --check`, only `ruff check`**, so
+  formatting had drifted across 23 files (line wrapping, blank lines).
+  Reformatted the tree and added the missing CI step so it can't drift
+  again silently.
 
 ## [1.1.0] - 2026-08-06
 

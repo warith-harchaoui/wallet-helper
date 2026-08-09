@@ -4,6 +4,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -29,7 +30,7 @@ def test_memoize_over_sqlite_dedups(tmp_path: Path) -> None:
     def cube(n: int) -> int:
         nonlocal runs
         runs += 1
-        return n ** 3
+        return n**3
 
     assert cube(3) == 27
     assert cube(3) == 27  # served from the shared store

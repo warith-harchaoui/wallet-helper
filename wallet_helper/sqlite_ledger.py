@@ -17,6 +17,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 import json
@@ -79,9 +80,9 @@ class SqliteLedger:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS entries ("
                 "  key TEXT PRIMARY KEY,"
-                "  result TEXT NOT NULL,"      # the result, stored as JSON
+                "  result TEXT NOT NULL,"  # the result, stored as JSON
                 "  created_at REAL NOT NULL,"
-                "  expires_at REAL,"           # NULL means the entry never expires
+                "  expires_at REAL,"  # NULL means the entry never expires
                 "  hits INTEGER NOT NULL DEFAULT 0"
                 ")"
             )
@@ -352,9 +353,7 @@ class SqliteLedger:
             if max_entries is not None:
                 # Keep the newest max_entries; delete anything ranked below them.
                 conn.execute(
-                    "DELETE FROM entries WHERE key NOT IN ("
-                    "  SELECT key FROM entries ORDER BY created_at DESC LIMIT ?"
-                    ")",
+                    "DELETE FROM entries WHERE key NOT IN (  SELECT key FROM entries ORDER BY created_at DESC LIMIT ?)",
                     (max_entries,),
                 )
             after = conn.execute("SELECT COUNT(*) FROM entries").fetchone()[0]

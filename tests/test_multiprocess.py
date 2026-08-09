@@ -9,6 +9,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 import multiprocessing
@@ -77,6 +78,6 @@ def test_cross_process_single_flight(tmp_path: Path) -> None:
         results = pool.map(_worker, [(db_path, marker_path)] * 4)
 
     runs = len(open(marker_path).read()) if os.path.exists(marker_path) else 0
-    assert runs == 1                                  # the work ran once across processes
-    assert results.count(False) == 1                   # exactly one leader
-    assert results.count(True) == 3                    # three followers reused the result
+    assert runs == 1  # the work ran once across processes
+    assert results.count(False) == 1  # exactly one leader
+    assert results.count(True) == 3  # three followers reused the result

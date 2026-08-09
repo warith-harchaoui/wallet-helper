@@ -4,6 +4,7 @@ Author
 ------
 Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 """
+
 from __future__ import annotations
 
 import sqlite3
@@ -34,17 +35,17 @@ def test_missing_key_returns_none(ledger: SqliteLedger) -> None:
 
 def test_claim_leases_then_submits(ledger: SqliteLedger) -> None:
     first = ledger.claim("asr_x")
-    assert first["status"] == "leased"          # first caller computes
+    assert first["status"] == "leased"  # first caller computes
     second = ledger.claim("asr_x")
-    assert second["status"] == "pending"        # a concurrent caller waits
-    ledger.submit("asr_x", {"done": True})      # leader stores and releases
+    assert second["status"] == "pending"  # a concurrent caller waits
+    ledger.submit("asr_x", {"done": True})  # leader stores and releases
     third = ledger.claim("asr_x")
     assert third == {"status": "hit", "result": {"done": True}}
 
 
 def test_release_lets_another_caller_take_over(ledger: SqliteLedger) -> None:
     assert ledger.claim("asr_y")["status"] == "leased"
-    ledger.release("asr_y")                      # leader failed and released
+    ledger.release("asr_y")  # leader failed and released
     assert ledger.claim("asr_y")["status"] == "leased"  # someone else can lead
 
 
@@ -56,8 +57,8 @@ def test_stale_lease_is_stolen(ledger: SqliteLedger) -> None:
 
 def test_extend_renews_a_lease(ledger: SqliteLedger) -> None:
     assert ledger.claim("asr_k", lease_seconds=100)["status"] == "leased"
-    assert ledger.extend("asr_k") is True       # a held lease is renewed
-    assert ledger.extend("absent") is False      # nothing to renew
+    assert ledger.extend("asr_k") is True  # a held lease is renewed
+    assert ledger.extend("absent") is False  # nothing to renew
 
 
 def test_fencing_token_blocks_a_stale_leader(ledger: SqliteLedger) -> None:
@@ -72,8 +73,8 @@ def test_fencing_token_blocks_a_stale_leader(ledger: SqliteLedger) -> None:
 
     # The revived old leader cannot extend or release the new leader's lease.
     assert ledger.extend("asr_f", old_token) is False
-    ledger.release("asr_f", old_token)                       # no-op, wrong owner
-    assert ledger.claim("asr_f")["status"] == "pending"       # new lease still held
+    ledger.release("asr_f", old_token)  # no-op, wrong owner
+    assert ledger.claim("asr_f")["status"] == "pending"  # new lease still held
 
     # The rightful holder can renew and release.
     assert ledger.extend("asr_f", new_token) is True
