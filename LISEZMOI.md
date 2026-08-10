@@ -18,7 +18,7 @@ Par [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui)
 
 [🗺️ Paysage](https://github.com/warith-harchaoui/wallet-helper/blob/main/PAYSAGE.md)
 
-[📋 Exemples](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md)
+[📋 Exemples](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXEMPLES.md)
 
 ## Ce que ça fait
 
