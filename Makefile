@@ -5,7 +5,7 @@
 # failures show up locally rather than in a pull request.
 #
 # Targets:
-#   make install   editable install with dev + all optional extras
+#   make install   editable install with the dev, cli, and api extras
 #   make fmt        autofix lints (ruff --fix), leaving hand-formatting intact
 #   make lint       lint only, no changes (what CI checks)
 #   make test       run the test suite (pytest + doctests)
