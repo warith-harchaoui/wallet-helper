@@ -45,10 +45,18 @@ The only requirement is **Python 3.10 to 3.13**. If you need Python itself:
 - 🐧 **Ubuntu/Debian**: `sudo apt update && sudo apt install -y python3 python3-pip`
 - 🪟 **Windows** (PowerShell): `winget install Python.Python.3.12`
 
-Install from GitHub, pinned to the release tag:
+Install from PyPI:
 
 ```bash
 pip install wallet-helper
+```
+
+Or from source:
+
+```bash
+git clone https://github.com/warith-harchaoui/wallet-helper.git
+cd wallet-helper
+pip install -e .
 ```
 
 The command-line and HTTP surfaces are opt-in extras:
