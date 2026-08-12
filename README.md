@@ -151,7 +151,7 @@ wallet-helper is part of the AI Helpers suite and builds on [os-helper](https://
 ## Tests
 
 ```bash
-make install   # editable install with dev and all extras
+make install   # editable install with dev, cli, and api extras
 make lint      # ruff (PEP 8 and import order)
 make test      # pytest and doctests
 make           # lint then test
@@ -167,20 +167,20 @@ here is the honest, case-by-case reality:
 
 1. **Guaranteed local.** The default `Ledger` (a folder of JSON files) and the
    `SqliteLedger` (one file) live under `$WALLET_HELPER_DIR`, or
-   `~/.cache/wallet-helper` — on your machine. Nothing is uploaded, there is no
+   `~/.cache/wallet-helper`, on your machine. Nothing is uploaded, there is no
    telemetry, and there is no account. Your cached results, and the inputs that
    key them, never leave the disk.
 
-2. **Not possible to be local — the caveat.** wallet-helper exists to *avoid*
+2. **Where local is not possible: the caveat.** wallet-helper exists to *avoid*
    running your heavy call; it makes no network requests of its own. The one
    exception is by design: the optional `[api]` dedup server and `RemoteLedger`
-   speak HTTP so a fleet can share one dedup point — and they talk only to the
+   speak HTTP so a fleet can share one dedup point, and they talk only to the
    endpoint you point them at.
 
 3. **Your decision.** wallet-helper stores whatever your function returns; if
    that function calls a paid cloud API, that is your code's choice, never
    wallet-helper's. Point `RemoteLedger` at your own host and the shared store
-   stays sovereign; point it at a third party and that too is your call — never
+   stays sovereign; point it at a third party and that too is your call, never
    a default.
 
 ## Author

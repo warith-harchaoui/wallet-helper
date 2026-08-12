@@ -88,7 +88,7 @@ project page never drifts to an old version.
   `__slots__` to find its state; a subclass's `__slots__` only lists the
   names *it* adds, not what a base class contributes, so any state held in an
   inherited slot was missing from the key. Two instances that differed only
-  in that inherited slot then hashed identically — a real cache collision (a
+  in that inherited slot then hashed identically: a real cache collision (a
   wrong cached result served for a different logical input), not merely a
   missed hit. `__slots__` is now collected across the whole MRO.
   `__weakref__`, a runtime plumbing slot rather than user state, is skipped

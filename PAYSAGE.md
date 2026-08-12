@@ -11,7 +11,7 @@ processus, tout en restant locale (aucun service séparé requis).
 Une note sur les dépendances : wallet-helper a une seule dépendance directe,
 os-helper (la couche utilitaire partagée de la suite AI Helpers), qui à son tour
 tire quelques bibliothèques courantes (requests, pyyaml, tqdm, validators,
-python-dotenv). Il est donc local-first et autonome au niveau du service, mais
+python-dotenv, psutil). Il est donc local-first et autonome au niveau du service, mais
 pas exempt de dépendances.
 
 Deux problèmes font qu'un appel lourd tourne deux fois :
@@ -87,7 +87,7 @@ La carte est un résumé en 2D des 9 critères : à lire comme une forme, pas co
 | `litellm` cache | Mise en cache plus fonctionnalités fournisseur pour les LLM. | LLM seulement ; grosse dépendance ; pas d'adressage par contenu d'entrées arbitraires. |
 | `cashews` | Cache moderne à décorateur, async-first ; TTL / modèles de clé ; protection anti-avalanche intégrée (`lock=True`, recalcul anticipé) ; backends mémoire / disque / redis. | Asynchrone seulement ; la clé porte sur les arguments / modèles, pas sur le contenu du fichier d'entrée ; le verrou distribué (inter-processus) a besoin de redis, donc « local » et « inter-processus » ne sont pas vrais en même temps. |
 | `cacheme` | Framework de cache asyncio avec forte protection contre l'avalanche (single-flight) ; nœuds typés ; stockage extensible (TLRU en mémoire, redis, mongo). | Asynchrone seulement ; la clé porte sur les arguments de nœud, pas sur le contenu d'entrée ; l'inter-processus nécessite redis / mongo ; pas de voie inter-processus locale et autonome. |
-| GPTCache (sémantique) | Un autre axe : fait correspondre des invites *similaires* via embeddings + recherche vectorielle, donc les paraphrases font mouche — la mise en cache sémantique que wallet-helper ne fait délibérément pas. | Orienté LLM ; a besoin d'un encodeur (embedder) et d'un magasin vectoriel ; correspondances probabilistes (un seuil de similarité) plutôt qu'une réutilisation exacte et adressée par contenu. |
+| GPTCache (sémantique) | Un autre axe : fait correspondre des invites *similaires* via embeddings + recherche vectorielle, donc les paraphrases font mouche : la mise en cache sémantique que wallet-helper ne fait délibérément pas. | Orienté LLM ; a besoin d'un encodeur (embedder) et d'un magasin vectoriel ; correspondances probabilistes (un seuil de similarité) plutôt qu'une réutilisation exacte et adressée par contenu. |
 
 ## Deux choses que wallet-helper n'est pas
 
@@ -102,7 +102,7 @@ La carte est un résumé en 2D des 9 critères : à lire comme une forme, pas co
   HTTPX) mettent en cache les réponses HTTP selon leur sémantique de cache-control.
   wallet-helper met en cache le résultat de *n'importe quelle* fonction par le
   contenu de ses entrées, donc il couvre aussi un modèle local lent ou un appel
-  non-HTTP — mais il ne lit pas les en-têtes de cache HTTP.
+  non-HTTP, mais il ne lit pas les en-têtes de cache HTTP.
 
 ## Idées empruntées
 

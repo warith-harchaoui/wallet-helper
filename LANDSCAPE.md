@@ -10,7 +10,7 @@ local (no separate service required).
 
 A note on dependencies: wallet-helper has one direct dependency, os-helper (the
 shared utility layer of the AI Helpers suite), which in turn pulls a few common
-libraries (requests, pyyaml, tqdm, validators, python-dotenv). So it is
+libraries (requests, pyyaml, tqdm, validators, python-dotenv, psutil). So it is
 local-first and self-contained at the service level, but not dependency-free.
 
 Two problems make a heavy call run twice:
@@ -86,7 +86,7 @@ The map is a 2-D summary of the nine criteria, so read it as a shape, not a scor
 | `litellm` cache | Caching plus provider features for LLMs. | LLM only; large dependency; no content-addressing of arbitrary inputs. |
 | `cashews` | Modern async-first decorator cache; TTL/key templates; built-in stampede protection (`lock=True`, early recompute); memory / disk / redis backends. | Async-only; keys on args/templates, not input file content; the distributed lock (cross-process) needs redis, so "local" and "cross-process" are not both true at once. |
 | `cacheme` | Asyncio cache framework with strong thundering-herd (single-flight) protection; typed nodes; pluggable storage (in-memory TLRU, redis, mongo). | Async-only; keys on node args, not input content; cross-process needs redis/mongo; no self-contained local cross-process path. |
-| GPTCache (semantic) | Different axis: matches *similar* prompts via embeddings + vector search, so paraphrases hit — the semantic caching wallet-helper deliberately does not do. | LLM-oriented; needs an embedder and a vector store; probabilistic hits (a similarity threshold) rather than exact, content-addressed reuse. |
+| GPTCache (semantic) | Different axis: matches *similar* prompts via embeddings + vector search, so paraphrases hit: the semantic caching wallet-helper deliberately does not do. | LLM-oriented; needs an embedder and a vector store; probabilistic hits (a similarity threshold) rather than exact, content-addressed reuse. |
 
 ## Two things wallet-helper is not
 
@@ -99,7 +99,7 @@ The map is a 2-D summary of the nine criteria, so read it as a shape, not a scor
   [hishel](https://github.com/karpetrosyan/hishel) (RFC 9111 caching for HTTPX)
   cache HTTP responses by their cache-control semantics. wallet-helper caches
   *any* function's result by the content of its inputs, so it also covers a slow
-  local model or a non-HTTP call — but it does not read HTTP cache headers.
+  local model or a non-HTTP call, but it does not read HTTP cache headers.
 
 ## Ideas borrowed
 

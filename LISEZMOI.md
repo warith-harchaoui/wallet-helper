@@ -25,7 +25,7 @@ Par [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui)
 Un appel lourd, on ne veut pas le payer deux fois. Deux causes de double exécution :
 
 1. Vous le rappelez la semaine suivante. wallet-helper stocke chaque résultat sur disque, adressé par contenu à partir d'un namespace et des entrées (arguments, contenu d'un fichier ou octets), donc la répétition est servie depuis le stockage plutôt que recalculée.
-2. Vous le lancez deux fois en même temps. Deux threads ou deux processus, démarrent le même appel lent avant que l'un ne finisse. wallet-helper laisse l'un l'exécuter et fait attendre les autres pour ce résultat, donc le travail n'a lieu qu'une fois.
+2. Vous le lancez deux fois en même temps. Deux threads ou deux processus démarrent le même appel lent avant que l'un ne finisse. wallet-helper laisse l'un l'exécuter et fait attendre les autres pour ce résultat, donc le travail n'a lieu qu'une fois.
 
 C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouche et deux entrées différentes n'entrent jamais en collision. Le stockage par défaut est un dossier de fichiers JSON, simple à lire et à supprimer. Un backend SQLite ajoute un stockage partagé et sûr en concurrence, plus le single-flight entre processus. Un petit serveur HTTP centralise cette déduplication pour plusieurs clients.
 
@@ -154,7 +154,7 @@ wallet-helper fait partie de la suite AI Helpers et s'appuie sur [os-helper](htt
 ## Tests
 
 ```bash
-make install   # installation éditable avec dev et tous les extras
+make install   # installation éditable avec les extras dev, cli et api
 make lint      # ruff (PEP 8 et ordre des imports)
 make test      # pytest et doctests
 make           # lint puis test
@@ -171,22 +171,22 @@ cas par cas :
 
 1. **Garanti local.** Le `Ledger` par défaut (un dossier de fichiers JSON) et le
    `SqliteLedger` (un seul fichier) vivent sous `$WALLET_HELPER_DIR`, ou
-   `~/.cache/wallet-helper` — sur votre machine. Rien n'est envoyé, aucune
-   télémétrie, aucun compte. Vos résultats mis en cache et les entrées qui les
+   `~/.cache/wallet-helper`, sur votre machine. Rien n'est envoyé, aucune
+   télémétrie, aucun compte. Vos résultats mis en cache, et les entrées qui les
    indexent, ne quittent jamais le disque.
 
-2. **Impossible d'être local — la réserve.** wallet-helper existe pour *éviter*
-   de relancer votre appel coûteux ; il ne fait aucune requête réseau de
-   lui-même. La seule exception est voulue : le serveur de dédup optionnel
+2. **Là où le local n'est pas possible : la réserve.** wallet-helper existe pour
+   *éviter* de relancer votre appel coûteux ; il ne fait aucune requête réseau
+   de lui-même. La seule exception est voulue : le serveur de dédup optionnel
    (`[api]`) et `RemoteLedger` parlent HTTP pour qu'une flotte partage un même
-   point de dédup — et ils ne s'adressent qu'à l'endpoint que vous leur
+   point de dédup ; ils ne s'adressent qu'à l'endpoint que vous leur
    indiquez.
 
 3. **Votre décision.** wallet-helper stocke ce que votre fonction renvoie ; si
    cette fonction appelle une API cloud payante, c'est le choix de votre code,
    jamais celui de wallet-helper. Pointez `RemoteLedger` vers votre propre hôte
-   et le stockage partagé reste souverain ; pointez-le vers un tiers et c'est
-   aussi votre choix — jamais un défaut.
+   et le stockage partagé reste souverain ; pointez-le vers un tiers, c'est
+   aussi votre choix, jamais un défaut.
 
 ## Auteur
 
