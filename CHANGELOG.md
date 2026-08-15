@@ -6,6 +6,8 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-08-15
+
 ### Fixed
 
 - **`wallet-helper-click` leaked raw exceptions for plain usage errors, not
