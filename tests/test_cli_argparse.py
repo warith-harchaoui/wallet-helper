@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from wallet_helper.cli_argparse import main
 from wallet_helper.ledger import Ledger, make_key
+from wallet_helper.sqlite_ledger import SqliteLedger
 
 
 def test_path_prints_the_ledger_location(tmp_path: Path, capsys) -> None:
@@ -33,3 +36,18 @@ def test_clear_empties_the_ledger(tmp_path: Path, capsys) -> None:
     lg.put(make_key("demo", {"x": 1}), {"ok": True})
     assert main(["--dir", str(tmp_path), "clear"]) == 0
     assert lg.stats()["entries"] == 0
+
+
+def test_library_exception_prints_clean_error_not_a_traceback(
+    tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # main() had no try/except at all: any library exception (a locked or
+    # corrupted SQLite ledger, a permission error) propagated as a raw
+    # traceback out of the console script instead of a clean message.
+    def _boom(self, namespace=None):
+        raise RuntimeError("db is locked")
+
+    monkeypatch.setattr(SqliteLedger, "stats", _boom)
+    rc = main(["--sqlite", str(tmp_path / "ledger.db"), "stats"])
+    assert rc == 1
+    assert "Error: db is locked" in capsys.readouterr().err

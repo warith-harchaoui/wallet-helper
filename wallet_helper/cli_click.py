@@ -108,8 +108,23 @@ def main(argv: list[str] | None = None) -> int:
         Process exit code (``0`` on success).
     """
     # standalone_mode=False lets click return instead of calling sys.exit, so the
-    # function is unit-testable and composes as a normal callable.
-    return cli.main(args=argv, prog_name="wallet-helper", standalone_mode=False) or 0
+    # function is unit-testable and composes as a normal callable -- but it also
+    # disables click's OWN exception handling, so without the try/except below
+    # even a plain usage error (an unknown command, a bad option) would leak as
+    # a raw ClickException/UsageError traceback instead of click's usual clean
+    # "Error: ..." message. A library exception (e.g. a corrupted SQLite ledger)
+    # is caught the same way every other CLI surface in this suite handles one.
+    try:
+        return cli.main(args=argv, prog_name="wallet-helper", standalone_mode=False) or 0
+    except click.ClickException as exc:
+        exc.show()  # click's own formatting, to stderr
+        return exc.exit_code
+    except click.exceptions.Abort:
+        click.echo("Aborted!", err=True)
+        return 1
+    except Exception as exc:  # noqa: BLE001 — last resort: see docstring above
+        click.echo(f"Error: {exc}", err=True)
+        return 1
 
 
 if __name__ == "__main__":

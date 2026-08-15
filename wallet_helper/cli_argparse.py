@@ -20,6 +20,7 @@ Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 from __future__ import annotations
 
 import argparse
+import sys
 
 from wallet_helper import __version__
 from wallet_helper.ledger import Ledger, LedgerLike
@@ -59,25 +60,30 @@ def main(argv: list[str] | None = None) -> int:
     evict.add_argument("--older-than", type=float, default=None, help="Remove entries older than this many seconds.")
 
     args = parser.parse_args(argv)
-    ledger = _open_ledger(args.dir, args.sqlite)
 
-    if args.command == "path":
-        print(ledger.location)
+    try:
+        ledger = _open_ledger(args.dir, args.sqlite)
+
+        if args.command == "path":
+            print(ledger.location)
+            return 0
+        if args.command == "clear":
+            ledger.clear()
+            print(f"cleared {ledger.location}")
+            return 0
+        if args.command == "evict":
+            removed = ledger.evict(max_entries=args.max_entries, older_than=args.older_than)
+            print(f"evicted {removed} entries from {ledger.location}")
+            return 0
+        # stats
+        s = ledger.stats()
+        print(f"ledger: {ledger.location}")
+        print(f"entries: {s['entries']}")
+        print(f"calls saved (cache hits): {s['hits']}")
         return 0
-    if args.command == "clear":
-        ledger.clear()
-        print(f"cleared {ledger.location}")
-        return 0
-    if args.command == "evict":
-        removed = ledger.evict(max_entries=args.max_entries, older_than=args.older_than)
-        print(f"evicted {removed} entries from {ledger.location}")
-        return 0
-    # stats
-    s = ledger.stats()
-    print(f"ledger: {ledger.location}")
-    print(f"entries: {s['entries']}")
-    print(f"calls saved (cache hits): {s['hits']}")
-    return 0
+    except Exception as exc:  # noqa: BLE001 — last resort: a clean message, not a traceback
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

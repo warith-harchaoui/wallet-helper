@@ -4,6 +4,21 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [Unreleased]
+
+### Fixed
+
+- **`wallet-helper-click` leaked raw exceptions for plain usage errors, not
+  just library errors.** `main()` calls click with `standalone_mode=False`
+  (so it stays a plain callable returning an int, for testability), which
+  also disables click's own exception handling — so even an unknown
+  subcommand or a bad option raised a raw `ClickException`/`UsageError`
+  instead of click's usual clean message. Both CLI twins now print one
+  `Error: ...` line to stderr and return a non-zero exit code on any library
+  exception (a locked/corrupted SQLite ledger, a permission error); the
+  click twin additionally restores click's own formatted output for its own
+  `ClickException`/`Abort`.
+
 ## [1.1.1] - 2026-08-09
 
 ### Changed
