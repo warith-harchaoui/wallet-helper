@@ -34,7 +34,7 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 Ce qui est livré aujourd'hui :
 
 - **bibliothèque** avec `Wallet` et le décorateur `@memoize` (synchrone et `async def`), sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé) ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
-- **single-flight entre processus** via le backend SQLite ou le serveur, avec un jeton de fencing pour que le travail s'exécute une seule fois même si un leader plante, un délai de bail et un heartbeat pour les jobs longs.
+- **single-flight entre processus** via le backend SQLite ou le serveur, avec un jeton de fencing (un nombre qui ne fait qu'augmenter, si bien qu'une écriture tardive d'un leader planté ou bloqué est reconnue comme périmée et rejetée) pour que le travail s'exécute une seule fois même si un leader plante, un délai de bail et un heartbeat pour les jobs longs.
 - **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, une politique `evict` par âge ou taille et un plafond automatique (`max_entries`).
 - **`wallet-helper` / `cli_argparse`** et **`wallet-helper-click`** : inspecter, vider et éviter le stockage.
 - **serveur HTTP de déduplication** (l'extra `[api]`) plus `RemoteLedger`, pour que plusieurs clients sur n'importe quelle machine partagent un point de déduplication.

@@ -2,9 +2,9 @@
 
 A thin adapter that exposes the FastAPI app from :mod:`wallet_helper.api` as MCP
 tools, so any MCP-aware host (an agent runtime, an IDE integration, a custom
-shell) can call the centralized dedup server — claim/run/submit a lease,
-check /stats, fetch a stored /result, /clear or /evict the store — as
-first-class tools. Uses `fastapi-mcp`
+shell) can call the centralized dedup server as first-class tools: claim, run,
+and submit a lease; check /stats; fetch a stored /result; clear or evict the
+store. Uses `fastapi-mcp`
 (https://github.com/tadata-org/fastapi_mcp): one wrapper publishes the whole
 existing HTTP surface, so the routes are never duplicated.
 

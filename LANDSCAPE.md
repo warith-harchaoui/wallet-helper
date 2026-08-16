@@ -65,7 +65,7 @@ Rated ⭐ (absent or poor) to ⭐⭐⭐⭐⭐ (best in class) per column.
 
 ![Positioning map](https://raw.githubusercontent.com/warith-harchaoui/wallet-helper/main/assets/landscape.png)
 
-The map is a 2-D summary of the nine criteria, so read it as a shape, not a scoreboard. `wallet-helper` is at the top-right corner. The axes read **Horizontal — Autonomy ↔ Scalable** and **Vertical — Responsive ↔ Elegant**.
+The map is a 2-D summary of the nine criteria, so read it as a shape, not a scoreboard. `wallet-helper` is at the top-right corner. The axes read **Horizontal: Autonomy ↔ Scalable** and **Vertical: Responsive ↔ Elegant**.
 <!-- FIGURE:END -->
 
 ## Pros and cons
