@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Callable
 
@@ -120,7 +121,15 @@ class RemoteLedger:
 
     def get_record(self, key: str) -> dict | None:
         """Return a partial record ``{"key", "result"}`` for ``key``, or ``None``."""
-        resp = self._request("GET", f"/result/{key}")
+        # A namespace (and so a key) can legitimately contain URL-reserved
+        # characters -- "/" (a namespace with a slash, see the server's
+        # {key:path} route), "?", "&", "#" (a plain string is a valid
+        # namespace). Un-encoded, any of these truncates or corrupts the
+        # request line before it reaches the server: "?" turns the rest of
+        # the key into a bogus query string, silently mis-routing to a
+        # *different, shorter* key -- the same "namespace as untrusted
+        # string" bug class already fixed once for the JSON/SQLite stores.
+        resp = self._request("GET", f"/result/{urllib.parse.quote(key, safe='')}")
         return None if resp is None else {"key": key, "result": resp["result"]}
 
     def get(self, key: str) -> Any | None:
@@ -141,7 +150,10 @@ class RemoteLedger:
 
     def stats(self, namespace: str | None = None) -> dict:
         """Return ``{entries, hits}`` from the server (namespace filter optional)."""
-        path = "/stats" if namespace is None else f"/stats?namespace={namespace}"
+        # Same reasoning as get_record: an un-encoded "&" or "=" in namespace
+        # would inject or truncate query parameters instead of being sent as
+        # part of the namespace's value.
+        path = "/stats" if namespace is None else f"/stats?{urllib.parse.urlencode({'namespace': namespace})}"
         return self._request("GET", path)
 
     def clear(self, namespace: str | None = None) -> None:

@@ -6,6 +6,22 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`RemoteLedger` mis-routed a key or namespace containing a URL-reserved
+  character.** `get_record` embedded the key straight into the request path
+  (`f"/result/{key}"`) and `stats` embedded the namespace straight into the
+  query string (`f"/stats?namespace={namespace}"`), un-encoded. A namespace
+  is user-supplied text (or a nested function's `module.qualname`, which
+  contains `<locals>`), so a `?`/`#` in it silently truncated the outgoing
+  request into the wrong (or no) key, and a `&`/`=` in a namespace passed to
+  `stats` silently split into extra query parameters — the same
+  "namespace-as-untrusted-string" bug class already fixed once for the JSON
+  and SQLite stores' `LIKE`/glob patterns. Both call sites now URL-encode via
+  `urllib.parse`. The server side was already correct (`{key:path}`, and
+  FastAPI decodes query params itself); only the client's request
+  construction was missing the encode.
+
 ## [1.1.2] - 2026-08-15
 
 ### Fixed

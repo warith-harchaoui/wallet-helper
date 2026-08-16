@@ -69,3 +69,29 @@ def test_remote_claim_submit_release(remote: RemoteLedger) -> None:
     assert remote.claim("ns_x")["status"] == "pending"
     remote.release("ns_x")
     assert remote.claim("ns_x")["status"] == "leased"  # released, so re-leasable
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "outer.<locals>.inner_deadbeef",  # a nested function's real default namespace
+        "a/b_deadbeef",  # a namespace with a slash (the server's own {key:path} case)
+        "ns?evil=1_deadbeef",  # "?" would otherwise truncate the path into a query string
+        "ns&x=1_deadbeef",  # "&" would otherwise inject a second, bogus query param
+        "ns#frag_deadbeef",  # "#" would otherwise truncate into a URL fragment
+    ],
+)
+def test_remote_get_record_survives_url_reserved_characters(remote: RemoteLedger, key: str) -> None:
+    # Un-encoded, any of these used to silently mis-route to the wrong (or no)
+    # key: everything from "?"/"#" onward never reached the server as part of
+    # the path, and "&" inside a query value split into two parameters.
+    remote.submit(key, {"ok": True})
+    assert remote.get(key) == {"ok": True}
+    assert remote.has(key) is True
+    assert remote.get("wrong_key") is None  # not a false hit on the truncated prefix
+
+
+def test_remote_stats_survives_url_reserved_characters_in_namespace(remote: RemoteLedger) -> None:
+    remote.submit("ns&x=1_a", {"ok": True})
+    remote.submit("other_b", {"ok": True})
+    assert remote.stats("ns&x=1")["entries"] == 1
