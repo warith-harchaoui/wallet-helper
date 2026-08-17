@@ -4,7 +4,7 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
-## [Unreleased]
+## [1.1.3] - 2026-08-17
 
 ### Fixed
 
@@ -15,12 +15,23 @@ semantic versioning.
   is user-supplied text (or a nested function's `module.qualname`, which
   contains `<locals>`), so a `?`/`#` in it silently truncated the outgoing
   request into the wrong (or no) key, and a `&`/`=` in a namespace passed to
-  `stats` silently split into extra query parameters — the same
+  `stats` silently split into extra query parameters, the same
   "namespace-as-untrusted-string" bug class already fixed once for the JSON
   and SQLite stores' `LIKE`/glob patterns. Both call sites now URL-encode via
   `urllib.parse`. The server side was already correct (`{key:path}`, and
   FastAPI decodes query params itself); only the client's request
   construction was missing the encode.
+
+### Documentation
+
+- **Glossed "fencing token"** in README.md/LISEZMOI.md, the one cross-process
+  mechanism left unexplained while its siblings (lease timeout, heartbeat,
+  stale-while-revalidate) already were. It is a random, unique value handed
+  out with each lease; a new leader taking over a stale lease gets a fresh
+  one, so a late write carrying the old value no longer matches and is
+  rejected.
+- Removed punctuation-dash asides from LANDSCAPE.md, PAYSAGE.md, and
+  `mcp.py`'s module docstring, per this project's writing charter.
 
 ## [1.1.2] - 2026-08-15
 
