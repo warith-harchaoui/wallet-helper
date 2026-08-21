@@ -31,12 +31,12 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 
 ## État
 
-Éprouvé en production : 112 tests, une matrice de CI (intégration continue) au vert sur Python 3.10 à 3.13 sous Linux et macOS, plus un test d'installation sous Windows, et des versions publiées sur PyPI selon le versionnage sémantique (voir les badges ci-dessus). Ce qui est livré aujourd'hui :
+Éprouvé en production : 113 tests, une matrice de CI (intégration continue) au vert sur Python 3.10 à 3.13 sous Linux et macOS, plus un test d'installation sous Windows, et des versions publiées sur PyPI selon le versionnage sémantique (voir les badges ci-dessus). Ce qui est livré aujourd'hui :
 
 - **bibliothèque** avec `Wallet` et le décorateur `@memoize` (synchrone et `async def`), sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé) ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
 - **single-flight entre processus** via le backend SQLite ou le serveur, avec un jeton de fencing (une valeur aléatoire et unique attribuée à chaque bail ; un nouveau leader qui reprend un bail périmé en reçoit une nouvelle, si bien qu'une écriture tardive portant l'ancienne valeur ne correspond plus et se voit rejetée) pour que le travail s'exécute une seule fois même si un leader plante, un délai de bail et un heartbeat pour les jobs longs.
 - **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, une politique `evict` par âge ou taille et un plafond automatique (`max_entries`).
-- **`wallet-helper` / `cli_argparse`** et **`wallet-helper-click`** : inspecter, vider et éviter le stockage.
+- **`wallet-helper` / `cli_argparse`** et **`wallet-helper-click`** : inspecter, vider et purger le stockage.
 - **serveur HTTP de déduplication** (l'extra `[api]`) plus `RemoteLedger`, pour que plusieurs clients sur n'importe quelle machine partagent un point de déduplication.
 - **outils MCP** (l'extra `[mcp]`) : le même serveur HTTP de déduplication exposé comme outils MCP pour tout hôte agentique compatible.
 

@@ -161,9 +161,26 @@ class Wallet:
             with self._inflight_lock:
                 event = self._inflight.get(key)
                 is_leader = event is None
+                fresh_record = None
                 if is_leader:
-                    event = threading.Event()
-                    self._inflight[key] = event
+                    # Nobody is computing this key right now. But our caller's
+                    # freshness check happened in _call_local, *before* this lock
+                    # was taken: a previous leader can finish, store, and pop
+                    # itself from _inflight in that gap (thread preemption can
+                    # land there; this is not merely theoretical). Re-check the
+                    # ledger here, atomically with the leadership claim, so we
+                    # never re-run fn for a key another leader just made fresh.
+                    fresh_record = self.ledger.get_record(key)
+                    if fresh_record is not None and is_fresh(fresh_record):
+                        is_leader = False  # nothing to compute; skip leadership
+                    else:
+                        fresh_record = None
+                        event = threading.Event()
+                        self._inflight[key] = event
+
+            if fresh_record is not None:
+                self.ledger.register_hit(key)
+                return fresh_record["result"], True
 
             if not is_leader:
                 # A follower: wait for the leader, then reuse its stored result.

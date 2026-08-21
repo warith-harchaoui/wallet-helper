@@ -4,6 +4,24 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [1.1.4] - 2026-08-21
+
+### Fixed
+
+- **A narrow in-process single-flight race could re-run `fn` for a key that
+  was already fresh.** `Wallet._call_local` checks the ledger for a fresh
+  record, then calls `_compute_local`, which takes the in-flight lock and
+  claims leadership. Between those two steps (no lock held), a concurrent
+  leader for the same key could finish, store its result, and remove itself
+  from the in-flight registry; a caller arriving in that gap then saw an
+  empty registry, claimed leadership itself, and re-ran the heavy call even
+  though a fresh result already existed in the ledger, defeating the
+  library's "never twice" promise. `_compute_local` now re-checks the ledger
+  for a fresh record atomically with the leadership claim, inside the same
+  locked section, so a caller landing in that gap reuses the existing result
+  instead of recomputing it. Regression test:
+  `tests/test_guard.py::test_compute_local_skips_recompute_when_already_fresh`.
+
 ## [1.1.3] - 2026-08-17
 
 ### Fixed

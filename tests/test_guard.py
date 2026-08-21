@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from wallet_helper.guard import Wallet
-from wallet_helper.ledger import Ledger
+from wallet_helper.ledger import Ledger, make_key
 
 
 @pytest.fixture()
@@ -82,3 +82,26 @@ def test_concurrent_identical_calls_run_once(wallet: Wallet) -> None:
     assert runs == 1  # ran exactly once
     assert {r[0] for r in results} == {"value"}  # both got the value
     assert sorted(r[1] for r in results) == [False, True]  # one leader, one follower
+
+
+def test_compute_local_skips_recompute_when_already_fresh(wallet: Wallet) -> None:
+    # Regression for a narrow race: _call_local's freshness check runs *before*
+    # _compute_local takes the in-flight lock. A previous leader can finish,
+    # store, and pop itself from _inflight in that gap, so a second caller can
+    # reach _compute_local's leader-claim branch with a stale "miss" verdict
+    # even though the ledger now holds a fresh result. _compute_local must
+    # re-check the ledger atomically with the leadership claim instead of
+    # blindly re-running fn.
+    runs = 0
+
+    def heavy() -> str:
+        nonlocal runs
+        runs += 1
+        return "should not run"
+
+    key = make_key("demo", {"x": 1})
+    wallet.ledger.put(key, "already-fresh")  # simulates the previous leader's result
+
+    result, from_cache = wallet._compute_local(key, heavy, None)
+    assert (result, from_cache) == ("already-fresh", True)
+    assert runs == 0  # fn must not run: a fresh result already existed
