@@ -28,7 +28,7 @@ It is content-addressed, so a renamed input file still hits and two different in
 
 ## Status
 
-What ships today:
+Battle-tested: 112 tests, a green CI matrix across Python 3.10 to 3.13 on Linux and macOS plus an install smoke test on Windows, and semantic-versioned releases on PyPI (see the badges above). What ships today:
 
 - **library** with `Wallet` and the `@memoize` decorator (sync and `async def`), over a `Ledger` (JSON files), a `SqliteLedger` (one shared file), or a `RemoteLedger` (an HTTP server). In-process single-flight is built in.
 - **cross-process single-flight** through the SQLite backend or the server, with a fencing token (a random, unique value handed out with each lease; a new leader taking over a stale lease gets a fresh one, so a late write carrying the old value no longer matches and is rejected) so a crashed or stalled leader cannot disrupt a new leader's lease, a lease timeout so a dead leader never blocks waiters, and a heartbeat so a long job keeps its lease. Duplicates coalesce as long as the leader finishes within its lease or keeps a heartbeat.

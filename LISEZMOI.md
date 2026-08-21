@@ -31,7 +31,7 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 
 ## État
 
-Ce qui est livré aujourd'hui :
+Éprouvé en production : 112 tests, une matrice de CI (intégration continue) au vert sur Python 3.10 à 3.13 sous Linux et macOS, plus un test d'installation sous Windows, et des versions publiées sur PyPI selon le versionnage sémantique (voir les badges ci-dessus). Ce qui est livré aujourd'hui :
 
 - **bibliothèque** avec `Wallet` et le décorateur `@memoize` (synchrone et `async def`), sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé) ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
 - **single-flight entre processus** via le backend SQLite ou le serveur, avec un jeton de fencing (une valeur aléatoire et unique attribuée à chaque bail ; un nouveau leader qui reprend un bail périmé en reçoit une nouvelle, si bien qu'une écriture tardive portant l'ancienne valeur ne correspond plus et se voit rejetée) pour que le travail s'exécute une seule fois même si un leader plante, un délai de bail et un heartbeat pour les jobs longs.
