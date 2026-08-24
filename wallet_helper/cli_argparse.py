@@ -54,7 +54,8 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("stats", help="Show how many results are cached and how many calls they saved.")
     sub.add_parser("path", help="Print where the ledger is stored.")
-    sub.add_parser("clear", help="Delete every cached result (irreversible).")
+    clear = sub.add_parser("clear", help="Delete every cached result (irreversible).")
+    clear.add_argument("--yes", action="store_true", help="Skip the confirmation prompt.")
     evict = sub.add_parser("evict", help="Prune expired results, and optionally by age or size.")
     evict.add_argument("--max-entries", type=int, default=None, help="Keep only the newest N entries.")
     evict.add_argument("--older-than", type=float, default=None, help="Remove entries older than this many seconds.")
@@ -68,6 +69,15 @@ def main(argv: list[str] | None = None) -> int:
             print(ledger.location)
             return 0
         if args.command == "clear":
+            # Matches cli_click.py's `click.confirm(..., abort=True)` gate: the
+            # argparse CLI is the dependency-free surface, not a rarely-used
+            # fallback, so it must not silently do the click CLI's confirmed-
+            # only irreversible action with no confirmation of its own.
+            if not args.yes:
+                reply = input(f"Delete every cached result under {ledger.location}? [y/N]: ")
+                if reply.strip().lower() not in ("y", "yes"):
+                    print("Aborted!", file=sys.stderr)
+                    return 1
             ledger.clear()
             print(f"cleared {ledger.location}")
             return 0

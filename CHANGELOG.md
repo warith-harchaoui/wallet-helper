@@ -4,10 +4,18 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
-## [1.1.4] - 2026-08-21
+## [1.1.4] - 2026-08-24
 
 ### Fixed
 
+- **`cli_argparse.py`'s `clear` command deleted the whole ledger with no
+  confirmation**, unlike `cli_click.py`'s `clear`, which prompts (or accepts
+  `--yes`) before this irreversible action. Both surfaces are documented as
+  offering the same features, and the argparse CLI is the dependency-free
+  one, not a rarely-used fallback — a user relying on the click CLI's
+  confirm-first behavior got silent, unconfirmed data loss on the other
+  surface. `clear` now gains the same `--yes`-skippable `input()`
+  confirmation prompt.
 - **A narrow in-process single-flight race could re-run `fn` for a key that
   was already fresh.** `Wallet._call_local` checks the ledger for a fresh
   record, then calls `_compute_local`, which takes the in-flight lock and

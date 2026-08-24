@@ -31,11 +31,28 @@ def test_stats_reports_entries_and_saved_calls(tmp_path: Path, capsys) -> None:
     assert "entries: 1" in out and "calls saved (cache hits): 1" in out
 
 
-def test_clear_empties_the_ledger(tmp_path: Path, capsys) -> None:
+def test_clear_with_yes_empties_the_ledger(tmp_path: Path, capsys) -> None:
     lg = Ledger(tmp_path)
     lg.put(make_key("demo", {"x": 1}), {"ok": True})
+    assert main(["--dir", str(tmp_path), "clear", "--yes"]) == 0
+    assert lg.stats()["entries"] == 0
+
+
+def test_clear_without_yes_prompts_and_confirms(tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch) -> None:
+    lg = Ledger(tmp_path)
+    lg.put(make_key("demo", {"x": 1}), {"ok": True})
+    monkeypatch.setattr("builtins.input", lambda _prompt: "y")
     assert main(["--dir", str(tmp_path), "clear"]) == 0
     assert lg.stats()["entries"] == 0
+
+
+def test_clear_without_yes_aborts_on_no(tmp_path: Path, capsys, monkeypatch: pytest.MonkeyPatch) -> None:
+    lg = Ledger(tmp_path)
+    lg.put(make_key("demo", {"x": 1}), {"ok": True})
+    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+    assert main(["--dir", str(tmp_path), "clear"]) == 1
+    assert "Aborted" in capsys.readouterr().err
+    assert lg.stats()["entries"] == 1
 
 
 def test_library_exception_prints_clean_error_not_a_traceback(
