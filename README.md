@@ -11,7 +11,7 @@ Never run the same heavy call twice. wallet-helper is persistent memoization for
 
 ## Documentation
 
-[💻 Documentation](https://harchaoui.org/warith/ai-helpers/docs/wallet-helper-doc/)
+[💻 Documentation](https://deraison.ai/ai-helpers/docs/wallet-helper-doc/)
 
 [🗺️ Landscape](https://github.com/warith-harchaoui/wallet-helper/blob/main/LANDSCAPE.md)
 

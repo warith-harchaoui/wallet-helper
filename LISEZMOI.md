@@ -14,7 +14,7 @@ Par [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui)
 
 ## Documentation
 
-[💻 Documentation](https://harchaoui.org/warith/ai-helpers/docs/wallet-helper-doc/)
+[💻 Documentation](https://deraison.ai/ai-helpers/docs/wallet-helper-doc/)
 
 [🗺️ Paysage](https://github.com/warith-harchaoui/wallet-helper/blob/main/PAYSAGE.md)
 
