@@ -29,13 +29,13 @@ with osh.temporary_folder() as tmp:
     wallet = Wallet(Ledger(tmp))
 
     def transcribe(path):
-        return {"text": "hello"}   # stand-in for a slow, paid API call
+        return {"text": "hello"}  # stand-in for a slow, paid API call
 
     r1, from_cache1 = wallet.call("transcribe", {"file": "a.wav"}, lambda: transcribe("a.wav"))
     r2, from_cache2 = wallet.call("transcribe", {"file": "a.wav"}, lambda: transcribe("a.wav"))
 
-    print(r1, from_cache1)   # {'text': 'hello'} False   -> ran
-    print(r2, from_cache2)   # {'text': 'hello'} True    -> served from the store
+    print(r1, from_cache1)  # {'text': 'hello'} False   -> ran
+    print(r2, from_cache2)  # {'text': 'hello'} True    -> served from the store
 ```
 
 ## 2. The decorator, with cache_info and cache_clear
@@ -56,10 +56,10 @@ with osh.temporary_folder() as tmp:
     def square(n):
         return n * n
 
-    print(square(9), square(9), square(10))   # 81 81 100
-    print(square.cache_info())                 # {'entries': 2, 'hits': 1}
+    print(square(9), square(9), square(10))  # 81 81 100
+    print(square.cache_info())  # {'entries': 2, 'hits': 1}
     square.cache_clear()
-    print(square.cache_info())                 # {'entries': 0, 'hits': 0}
+    print(square.cache_info())  # {'entries': 0, 'hits': 0}
 ```
 
 ## 3. Ignore a volatile argument
@@ -82,8 +82,8 @@ with osh.temporary_folder() as tmp:
         def get(self, doc_id):
             return f"doc:{doc_id}"
 
-    print(fetch(7, client=Client()))   # runs
-    print(fetch(7, client=Client()))   # different client, same key, served from the store
+    print(fetch(7, client=Client()))  # runs
+    print(fetch(7, client=Client()))  # different client, same key, served from the store
 ```
 
 ## 4. Content-address a file
@@ -101,15 +101,15 @@ from wallet_helper import make_key
 with osh.temporary_folder() as tmp:
     d = Path(tmp)
     (d / "clip.wav").write_bytes(b"AUDIO-BYTES")
-    (d / "renamed.wav").write_bytes(b"AUDIO-BYTES")   # same content, different name
+    (d / "renamed.wav").write_bytes(b"AUDIO-BYTES")  # same content, different name
 
     # A whole-payload path: renaming still hits.
-    print(make_key("asr", d / "clip.wav") == make_key("asr", d / "renamed.wav"))   # True
+    print(make_key("asr", d / "clip.wav") == make_key("asr", d / "renamed.wav"))  # True
 
     # A path nested among other arguments is content-addressed too.
     a = {"args": (str(d / "clip.wav"),), "kwargs": {"lang": "en"}}
     b = {"args": (str(d / "renamed.wav"),), "kwargs": {"lang": "en"}}
-    print(make_key("asr", a) == make_key("asr", b))                                # True
+    print(make_key("asr", a) == make_key("asr", b))  # True
 ```
 
 In practice you never build that payload yourself: `@memoize` does it for you, so
@@ -118,12 +118,14 @@ two copies of the same file at different paths run the heavy call only once.
 ```python
 from wallet_helper import memoize
 
+
 @memoize
 def transcribe(path, lang="en"):
-    return call_some_paid_api(path, lang)   # runs once for a given file + lang
+    return call_some_paid_api(path, lang)  # runs once for a given file + lang
 
-transcribe("clip.wav")            # runs
-transcribe("archive/clip.wav")    # same bytes, different path: served from the store
+
+transcribe("clip.wav")  # runs
+transcribe("archive/clip.wav")  # same bytes, different path: served from the store
 ```
 
 ## 5. Single-flight across threads
@@ -142,19 +144,22 @@ with osh.temporary_folder() as tmp:
 
     def slow():
         runs.append(1)
-        time.sleep(0.3)   # long enough for the second thread to arrive mid-flight
+        time.sleep(0.3)  # long enough for the second thread to arrive mid-flight
         return "value"
 
     out = []
+
     def worker():
         out.append(wallet.call("job", {"x": 1}, slow))
 
     threads = [threading.Thread(target=worker) for _ in range(2)]
-    for t in threads: t.start()
-    for t in threads: t.join()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
 
-    print(len(runs))                       # 1   -> ran exactly once
-    print(sorted(c for _, c in out))       # [False, True]  -> one leader, one follower
+    print(len(runs))  # 1   -> ran exactly once
+    print(sorted(c for _, c in out))  # [False, True]  -> one leader, one follower
 ```
 
 ## 6. A shared store with SQLite
@@ -169,9 +174,9 @@ from wallet_helper import Wallet, SqliteLedger
 with osh.temporary_folder() as tmp:
     wallet = Wallet(SqliteLedger(tmp + "/ledger.db"))
     r, from_cache = wallet.call("job", {"x": 1}, lambda: 42)
-    print(r, from_cache)   # 42 False
+    print(r, from_cache)  # 42 False
     r, from_cache = wallet.call("job", {"x": 1}, lambda: 42)
-    print(r, from_cache)   # 42 True
+    print(r, from_cache)  # 42 True
 ```
 
 ## 7. Cross-process single-flight over HTTP
@@ -192,22 +197,26 @@ import json, time, urllib.request
 
 BASE = "http://127.0.0.1:8000"
 
+
 def post(path, body):
-    req = urllib.request.Request(BASE + path, data=json.dumps(body).encode(),
-                                 headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(
+        BASE + path, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"}
+    )
     return json.load(urllib.request.urlopen(req))
+
 
 def get_or_run(namespace, payload, work):
     call = {"namespace": namespace, "payload": payload}
     while True:
         outcome = post("/claim", call)
         if outcome["status"] == "hit":
-            return outcome["result"]                       # already computed
+            return outcome["result"]  # already computed
         if outcome["status"] == "leased":
-            result = work()                                # we are the leader
+            result = work()  # we are the leader
             post("/submit", {**call, "result": result})
             return result
-        time.sleep(0.2)                                    # pending: someone else runs it
+        time.sleep(0.2)  # pending: someone else runs it
+
 
 print(get_or_run("transcribe", {"file": "a.wav"}, lambda: {"text": "hello"}))
 ```
@@ -229,9 +238,11 @@ from wallet_helper import Wallet, RemoteLedger, memoize
 
 wallet = Wallet(RemoteLedger("http://cache.internal:8000"))
 
+
 @memoize(wallet=wallet)
 def transcribe(path):
-    return call_some_paid_api(path)   # runs once across the whole fleet
+    return call_some_paid_api(path)  # runs once across the whole fleet
+
 
 transcribe("meeting.wav")
 ```
@@ -250,12 +261,12 @@ with osh.temporary_folder() as tmp:
     ledger = Ledger(tmp)
     wallet = Wallet(ledger)
 
-    wallet.call("price", {"sym": "ACME"}, lambda: 100, ttl=3600)   # fresh for an hour
+    wallet.call("price", {"sym": "ACME"}, lambda: 100, ttl=3600)  # fresh for an hour
 
-    ledger.put("old", 1, ttl=0.0)                 # already expired
-    print(ledger.evict())                          # 1   -> removed the expired entry
-    print(ledger.evict(max_entries=10))            # keep only the newest 10
-    print(ledger.evict(older_than=86400))          # drop entries older than a day
+    ledger.put("old", 1, ttl=0.0)  # already expired
+    print(ledger.evict())  # 1   -> removed the expired entry
+    print(ledger.evict(max_entries=10))  # keep only the newest 10
+    print(ledger.evict(older_than=86400))  # drop entries older than a day
 ```
 
 ## 10. Stale-while-revalidate
@@ -276,11 +287,11 @@ with osh.temporary_folder() as tmp:
         version[0] += 1
         return version[0]
 
-    print(wallet.call("cfg", {}, build, ttl=0.05))   # (1, False)  -> computed
-    time.sleep(0.06)                                   # let it expire
+    print(wallet.call("cfg", {}, build, ttl=0.05))  # (1, False)  -> computed
+    time.sleep(0.06)  # let it expire
     print(wallet.call("cfg", {}, build, ttl=0.05, stale_while_revalidate=True))  # (1, True) stale now
-    time.sleep(0.2)                                    # background refresh runs
-    print(wallet.call("cfg", {}, build, ttl=100))     # (2, True)   -> refreshed value
+    time.sleep(0.2)  # background refresh runs
+    print(wallet.call("cfg", {}, build, ttl=100))  # (2, True)   -> refreshed value
 ```
 
 ## 11. Async functions
@@ -306,10 +317,10 @@ with osh.temporary_folder() as tmp:
     async def main():
         # Two concurrent awaits of the same call run the work once.
         a, b = await asyncio.gather(fetch(6), fetch(6))
-        c = await fetch(6)          # served from the store
+        c = await fetch(6)  # served from the store
         return a, b, c, len(runs)
 
-    print(asyncio.run(main()))       # (36, 36, 36, 1)
+    print(asyncio.run(main()))  # (36, 36, 36, 1)
 ```
 
 ## 12. Command line

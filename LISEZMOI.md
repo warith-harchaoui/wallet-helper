@@ -79,19 +79,21 @@ Mémoïsez n'importe quelle fonction en une ligne. Le résultat est stocké sur 
 ```python
 from wallet_helper import memoize
 
+
 @memoize
 def transcribe(path):
-    return call_some_paid_api(path)   # lent et facturé ; s'exécute au plus une fois par fichier
+    return call_some_paid_api(path)  # lent et facturé ; s'exécute au plus une fois par fichier
 
-transcribe("reunion.wav")   # s'exécute, stocke le résultat
-transcribe("reunion.wav")   # servi depuis le stockage, pas de second appel
+
+transcribe("reunion.wav")  # s'exécute, stocke le résultat
+transcribe("reunion.wav")  # servi depuis le stockage, pas de second appel
 ```
 
 Un argument fichier est identifié par son contenu, pas par son chemin. Le même fichier atteint sous un autre nom ou une copie octet pour octet dans un autre dossier, fait donc mouche et deux fichiers différents ne se télescopent jamais même si leurs noms se ressemblent :
 
 ```python
-transcribe("reunion.wav")           # s'exécute
-transcribe("archive/reunion.wav")   # une copie de mêmes octets, servie depuis le stockage
+transcribe("reunion.wav")  # s'exécute
+transcribe("archive/reunion.wav")  # une copie de mêmes octets, servie depuis le stockage
 ```
 
 Ignorez un argument qui ne devrait pas changer le résultat, par exemple un handle client :
@@ -105,8 +107,8 @@ def fetch(doc_id, client):
 Inspectez ou videz le cache d'une fonction, comme `functools.lru_cache` :
 
 ```python
-transcribe.cache_info()    # {'entries': 1, 'hits': 1}
-transcribe.cache_clear()   # oublier les résultats stockés de cette fonction
+transcribe.cache_info()  # {'entries': 1, 'hits': 1}
+transcribe.cache_clear()  # oublier les résultats stockés de cette fonction
 ```
 
 Fixez une fenêtre de fraîcheur avec `ttl` (secondes) et partagez un stockage sur tout un parc en pointant vers un serveur :
@@ -114,12 +116,16 @@ Fixez une fenêtre de fraîcheur avec `ttl` (secondes) et partagez un stockage s
 ```python
 from wallet_helper import Wallet, RemoteLedger, memoize
 
-@memoize(ttl=3600)                       # les résultats expirent après une heure
+
+@memoize(ttl=3600)  # les résultats expirent après une heure
 def price(symbol):
     return call_pricing_api(symbol)
 
+
 wallet = Wallet(RemoteLedger("http://cache.internal:8000"))
-@memoize(wallet=wallet)                  # chaque machine déduplique via un serveur
+
+
+@memoize(wallet=wallet)  # chaque machine déduplique via un serveur
 def transcribe(path):
     return call_some_paid_api(path)
 ```

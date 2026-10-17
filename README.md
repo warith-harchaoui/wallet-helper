@@ -76,18 +76,20 @@ Memoize any function with one line. The result is stored on disk and reused on t
 ```python
 from wallet_helper import memoize
 
+
 @memoize
 def transcribe(path):
-    return call_some_paid_api(path)   # slow and billed; runs at most once per file
+    return call_some_paid_api(path)  # slow and billed; runs at most once per file
 
-transcribe("meeting.wav")   # runs, stores the result
-transcribe("meeting.wav")   # served from the store, no second call
+
+transcribe("meeting.wav")  # runs, stores the result
+transcribe("meeting.wav")  # served from the store, no second call
 ```
 
 A file argument is keyed by its content, not its path. So the same file reached under a different name, or a byte-for-byte copy in another folder, still hits, and two different files never collide even if their names look alike:
 
 ```python
-transcribe("meeting.wav")          # runs
+transcribe("meeting.wav")  # runs
 transcribe("archive/meeting.wav")  # a copy with the same bytes, served from the store
 ```
 
@@ -102,8 +104,8 @@ def fetch(doc_id, client):
 Inspect or drop a function's cache, like `functools.lru_cache`:
 
 ```python
-transcribe.cache_info()    # {'entries': 1, 'hits': 1}
-transcribe.cache_clear()   # forget this function's stored results
+transcribe.cache_info()  # {'entries': 1, 'hits': 1}
+transcribe.cache_clear()  # forget this function's stored results
 ```
 
 Set a freshness window with `ttl` (seconds), and share one store across a fleet by pointing at a running server:
@@ -111,12 +113,16 @@ Set a freshness window with `ttl` (seconds), and share one store across a fleet 
 ```python
 from wallet_helper import Wallet, RemoteLedger, memoize
 
-@memoize(ttl=3600)                       # results expire after an hour
+
+@memoize(ttl=3600)  # results expire after an hour
 def price(symbol):
     return call_pricing_api(symbol)
 
+
 wallet = Wallet(RemoteLedger("http://cache.internal:8000"))
-@memoize(wallet=wallet)                  # every host dedups through one server
+
+
+@memoize(wallet=wallet)  # every host dedups through one server
 def transcribe(path):
     return call_some_paid_api(path)
 ```
