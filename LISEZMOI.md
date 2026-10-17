@@ -196,6 +196,17 @@ cas par cas :
    et le stockage partagé reste souverain ; pointez-le vers un tiers, c'est
    aussi votre choix, jamais un défaut.
 
+## En tant que skill d'agent
+
+`skills/wallet-helper/` empaquette wallet-helper comme **skill Claude** *et* skill
+**OpenCode**, pour qu'un agent puisse s'en saisir à votre place. Voir
+[`skills/README.md`](https://github.com/warith-harchaoui/wallet-helper/blob/main/skills/README.md) pour l'installer (liens
+symboliques vers `~/.claude/skills/` et `~/.opencode/skills/`) et
+[`TRIGGERS.md`](https://github.com/warith-harchaoui/wallet-helper/blob/main/TRIGGERS.md) pour le catalogue exhaustif des
+déclencheurs — `scripts/check_triggers.py` maintient la description du skill
+alignée dessus ; la suite de tests échoue si une capacité cesse d'être
+nommée.
+
 ## Auteur
 
 - [Warith HARCHAOUI](https://linkedin.com/in/warith-harchaoui).
