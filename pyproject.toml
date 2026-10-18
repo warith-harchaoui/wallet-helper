@@ -48,7 +48,7 @@ mcp = [
     "mcp>=1.12,<2",
 ]
 # httpx powers FastAPI's TestClient, exercised by the api tests.
-dev = ["pytest>=8", "ruff>=0.6", "httpx>=0.27", "fastapi-mcp>=0.3,<1", "mcp>=1.12,<2"]
+dev = ["pytest>=8", "pytest-timeout>=2.3", "ruff>=0.6", "httpx>=0.27", "fastapi-mcp>=0.3,<1", "mcp>=1.12,<2"]
 
 [project.scripts]
 wallet-helper = "wallet_helper.cli_argparse:main"
