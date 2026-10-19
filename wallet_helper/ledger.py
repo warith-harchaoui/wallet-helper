@@ -44,6 +44,13 @@ _DIR_LOCKS: dict[str, threading.Lock] = {}
 _DIR_LOCKS_GUARD = threading.Lock()
 
 
+#: Where a store keeps its lifetime tallies. Deliberately NOT a ``.json`` file:
+#: every entry is ``*.json`` and the glob in :meth:`Ledger.stats` would
+#: otherwise count the tally as an entry, and :meth:`Ledger.evict` would delete
+#: it the moment the cache grew past ``max_entries``.
+_LIFETIME_FILE = "_lifetime.tally"
+
+
 def _atomic_write(path: Path, text: str) -> None:
     """Write ``text`` to ``path`` atomically, so a reader never sees a half file.
 
@@ -122,6 +129,10 @@ class LedgerLike(Protocol):
 
     def register_hit(self, key: str) -> None:
         """Count one reuse of the cached result for ``key`` (no-op if absent)."""
+        ...
+
+    def register_miss(self, key: str | None = None) -> None:
+        """Count one call the cache could not serve (store-wide)."""
         ...
 
     def stats(self, namespace: str | None = None) -> dict:
@@ -574,6 +585,42 @@ class Ledger:
                 return
             record["hits"] = int(record.get("hits", 0)) + 1
             _atomic_write(self._path(key), json.dumps(record, ensure_ascii=False, indent=2))
+        self._bump_lifetime("hits")
+
+    def register_miss(self, key: str | None = None) -> None:
+        """Count one call that had to be computed because the cache had nothing.
+
+        Counted store-wide rather than per entry, because a miss by definition
+        has no entry to count it against. Pairs with the lifetime hit tally so
+        a caller can compute a hit rate -- which is the number that actually
+        answers "is this cache earning its keep". A raw hit count cannot: 500
+        hits is excellent against 520 calls and dismal against 50 000.
+        """
+        self._bump_lifetime("misses")
+
+    def _lifetime_path(self) -> Path:
+        return self.dir / _LIFETIME_FILE
+
+    def _read_lifetime(self) -> dict:
+        """Lifetime tallies, or zeros when the store has never recorded any."""
+        try:
+            return json.loads(self._lifetime_path().read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            # A missing or corrupt tally is not worth failing a cache operation
+            # over: the counters are evidence about the cache, not the cache.
+            return {"hits": 0, "misses": 0}
+
+    def _bump_lifetime(self, field: str, n: int = 1) -> None:
+        """Add ``n`` to a lifetime tally, under the same lock entries use."""
+        try:
+            with _entry_lock(self.dir):
+                counts = self._read_lifetime()
+                counts[field] = int(counts.get(field, 0)) + n
+                self.dir.mkdir(parents=True, exist_ok=True)
+                _atomic_write(self._lifetime_path(), json.dumps(counts, ensure_ascii=False, indent=2))
+        except OSError:
+            # Same reasoning: never let bookkeeping break the thing it measures.
+            pass
 
     def clear(self, namespace: str | None = None) -> None:
         """Delete entries, all or just one ``namespace`` (irreversible).
@@ -589,19 +636,38 @@ class Ledger:
         osh.remove_files([str(p) for p in self.dir.glob(_namespace_glob(namespace))])
 
     def stats(self, namespace: str | None = None) -> dict:
-        """Count stored entries and their reuses, for the store or one namespace.
+        """Count stored entries, their reuses, and the store's lifetime tallies.
 
         Parameters
         ----------
         namespace : str, optional
-            Restrict the count to entries under this namespace. ``None`` (default)
-            counts the whole ledger.
+            Restrict ``entries`` and ``hits`` to this namespace. ``None``
+            (default) counts the whole ledger. **The lifetime tallies are
+            always store-wide** -- they are not attached to entries, so there
+            is nothing to filter them by.
 
         Returns
         -------
         dict
-            ``{"entries": int, "hits": int}`` where ``hits`` is how many times a
-            cached result was reused, that is, how many real calls were saved.
+            ``entries`` and ``hits`` describe the entries that exist *now*;
+            ``lifetime_hits`` and ``lifetime_misses`` describe everything this
+            store has ever done.
+
+        Notes
+        -----
+        The distinction is not pedantry. ``hits`` is stored inside each record,
+        so it leaves with the record: evicting or expiring an entry destroys
+        the evidence of every call it ever saved. Measured on a store with five
+        entries and a hundred reuses each, ``evict(max_entries=2)`` took the
+        reported total from 500 to 200 -- sixty per cent of the saved calls,
+        gone, with nothing raised. Since eviction and TTL are this package's own
+        features, any long-running cache under-reports its own value, and it
+        does so *more* the better it is housekeeping.
+
+        ``lifetime_hits`` is the number that honours the original claim, "how
+        many real calls were saved". It survives eviction and expiry. It does
+        not survive :meth:`clear`, which removes the store directory outright --
+        that is an explicit instruction to forget, not automatic housekeeping.
         """
         entries = hits = 0
         pattern = "*.json" if namespace is None else _namespace_glob(namespace)
@@ -609,7 +675,13 @@ class Ledger:
             record = json.loads(path.read_text(encoding="utf-8"))
             entries += 1
             hits += int(record.get("hits", 0))
-        return {"entries": entries, "hits": hits}
+        lifetime = self._read_lifetime()
+        return {
+            "entries": entries,
+            "hits": hits,
+            "lifetime_hits": int(lifetime.get("hits", 0)),
+            "lifetime_misses": int(lifetime.get("misses", 0)),
+        }
 
     def evict(self, *, max_entries: int | None = None, older_than: float | None = None) -> int:
         """Prune entries and return how many were removed.

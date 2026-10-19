@@ -104,8 +104,28 @@ def fetch(doc_id, client):
 Inspect or drop a function's cache, like `functools.lru_cache`:
 
 ```python
-transcribe.cache_info()  # {'entries': 1, 'hits': 1}
+transcribe.cache_info()
+# {'entries': 1, 'hits': 1, 'lifetime_hits': 1, 'lifetime_misses': 0}
 transcribe.cache_clear()  # forget this function's stored results
+```
+
+`entries` and `hits` describe what exists **now**; the lifetime tallies describe
+everything the store has **ever** done. The difference is not pedantry: `hits`
+is stored inside each record, so evicting or expiring an entry destroys the
+record of every call it ever saved. On a store with five entries and a hundred
+reuses each, `evict(max_entries=2)` took the reported total from 500 to 200 —
+sixty per cent of the saved calls, gone, with nothing raised. Since eviction
+and TTL are this package's own features, a long-running cache under-reported
+its own value, and did so *more* the better it was housekeeping.
+`lifetime_hits` survives both.
+
+`lifetime_misses` is what makes the number mean something. A hit count alone
+cannot say whether a cache is earning its keep — 500 hits is excellent against
+520 calls and dismal against 50 000:
+
+```python
+info = transcribe.cache_info()
+rate = info["lifetime_hits"] / (info["lifetime_hits"] + info["lifetime_misses"])
 ```
 
 Set a freshness window with `ttl` (seconds), and share one store across a fleet by pointing at a running server:

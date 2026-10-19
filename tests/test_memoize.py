@@ -114,6 +114,8 @@ def test_cache_info_and_clear(wallet: Wallet) -> None:
 
     thing(1)
     thing(1)  # one reuse
-    assert thing.cache_info() == {"entries": 1, "hits": 1}
+    info = thing.cache_info()
+    assert (info["entries"], info["hits"]) == (1, 1)
     thing.cache_clear()
-    assert thing.cache_info() == {"entries": 0, "hits": 0}
+    cleared = thing.cache_info()
+    assert (cleared["entries"], cleared["hits"]) == (0, 0)

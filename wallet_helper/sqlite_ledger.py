@@ -90,6 +90,13 @@ class SqliteLedger:
             # wait instead of running the same work. `owner` is the fencing token
             # that guards extend/submit/release against a revived stale leader.
             conn.execute(
+                # Lifetime tallies live in their own table precisely so that
+                # DELETEs against `entries` -- eviction, expiry -- cannot take
+                # them with them. SUM(hits) over surviving rows under-reports
+                # the cache's value by everything it has tidied away.
+                "CREATE TABLE IF NOT EXISTS counters (  name TEXT PRIMARY KEY,  value INTEGER NOT NULL DEFAULT 0)"
+            )
+            conn.execute(
                 "CREATE TABLE IF NOT EXISTS pending ("
                 "  key TEXT PRIMARY KEY,"
                 "  leased_at REAL NOT NULL,"
@@ -177,6 +184,26 @@ class SqliteLedger:
         """
         with self._session() as conn:
             conn.execute("UPDATE entries SET hits = hits + 1 WHERE key = ?", (key,))
+            self._bump(conn, "hits")
+
+    def register_miss(self, key: str | None = None) -> None:
+        """Count one call that had to be computed because the cache had nothing.
+
+        Store-wide, because a miss has no entry to be counted against. Pairs
+        with the lifetime hit tally so a caller can compute a hit rate, which
+        is the number that answers "is this cache earning its keep" -- a raw
+        hit count cannot.
+        """
+        with self._session() as conn:
+            self._bump(conn, "misses")
+
+    @staticmethod
+    def _bump(conn, name: str, n: int = 1) -> None:
+        """Add ``n`` to a lifetime counter, in one statement."""
+        conn.execute(
+            "INSERT INTO counters(name, value) VALUES(?, ?) ON CONFLICT(name) DO UPDATE SET value = value + ?",
+            (name, n, n),
+        )
 
     def stats(self, namespace: str | None = None) -> dict:
         """Count stored entries and their reuses, for the store or one namespace."""
@@ -188,7 +215,17 @@ class SqliteLedger:
                 row = conn.execute(
                     r"SELECT COUNT(*), COALESCE(SUM(hits), 0) FROM entries WHERE key LIKE ? ESCAPE '\'", like
                 ).fetchone()
-        return {"entries": row[0], "hits": row[1]}
+            counters = dict(conn.execute("SELECT name, value FROM counters").fetchall())
+        # `entries`/`hits` describe what exists now; the lifetime tallies
+        # describe everything this store has ever done and survive eviction.
+        # They are always store-wide -- not attached to entries, so there is
+        # nothing to filter them by.
+        return {
+            "entries": row[0],
+            "hits": row[1],
+            "lifetime_hits": int(counters.get("hits", 0)),
+            "lifetime_misses": int(counters.get("misses", 0)),
+        }
 
     def clear(self, namespace: str | None = None) -> None:
         """Delete entries, all or just one ``namespace`` (irreversible).

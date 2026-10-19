@@ -8,6 +8,7 @@ Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -322,7 +323,10 @@ def test_stats_count_entries_and_saved_calls(ledger: Ledger) -> None:
     ledger.register_hit(key)
     ledger.register_hit(key)  # reused twice, so two calls were saved
     s = ledger.stats()
-    assert s == {"entries": 1, "hits": 2}
+    assert s["entries"] == 1
+    assert s["hits"] == 2
+    # Same two reuses, counted where eviction cannot reach them.
+    assert s["lifetime_hits"] == 2
 
 
 def test_stats_and_clear_scope_to_a_namespace(ledger: Ledger) -> None:
@@ -339,7 +343,8 @@ def test_namespace_glob_metacharacters_do_not_leak_across_namespaces(ledger: Led
     # also match keys under an unrelated namespace like "axxxb".
     ledger.put("a_1", 1)
     ledger.put("axxxb_2", 2)
-    assert ledger.stats("a*b") == {"entries": 0, "hits": 0}
+    scoped = ledger.stats("a*b")
+    assert (scoped["entries"], scoped["hits"]) == (0, 0)
     ledger.clear("a*b")
     assert ledger.stats("a")["entries"] == 1 and ledger.stats("axxxb")["entries"] == 1
 
@@ -411,3 +416,81 @@ def test_max_entries_auto_evicts(tmp_path: Path) -> None:
     ledger.put("ns_b", 2)
     ledger.put("ns_c", 3)
     assert ledger.stats()["entries"] == 2  # each put keeps the store within the cap
+
+
+# ---------------------------------------------------------------------------
+# A cache must be able to evidence its own value
+# ---------------------------------------------------------------------------
+# `hits` lives inside each record, so it leaves with the record. Evicting or
+# expiring an entry destroys the evidence of every call it ever saved -- and
+# eviction and TTL are this package's own features, so a long-running cache
+# under-reported its own value, and did so *more* the better it housekept.
+
+
+def test_eviction_used_to_destroy_the_record_of_saved_calls(ledger: Ledger) -> None:
+    """The measurement that produced the finding: 500 saved, 200 reported."""
+    for i in range(5):
+        key = make_key("ns", {"i": i})
+        ledger.put(key, {"v": i})
+        for _ in range(100):
+            ledger.register_hit(key)
+
+    before = ledger.stats()
+    assert (before["entries"], before["hits"]) == (5, 500)
+
+    assert ledger.evict(max_entries=2) == 3
+    after = ledger.stats()
+
+    # The per-entry total still leaves with the entries -- that is what it is.
+    assert after["hits"] == 200
+    # The lifetime tally does not. 500 calls were saved; 500 is reported.
+    assert after["lifetime_hits"] == 500
+
+
+def test_expiry_does_not_erase_the_lifetime_tally(ledger: Ledger) -> None:
+    """TTL removes entries with no user action at all, so this matters more."""
+    key = make_key("ns", {"x": 1})
+    ledger.put(key, {"v": 1}, ttl=0.01)
+    ledger.register_hit(key)
+    time.sleep(0.05)
+    assert ledger.evict(older_than=0) >= 0  # sweep whatever has expired
+    assert ledger.stats()["lifetime_hits"] == 1
+
+
+def test_misses_are_counted_so_a_hit_rate_can_be_computed(ledger: Ledger) -> None:
+    """A raw hit count cannot say whether a cache is earning its keep.
+
+    500 hits is excellent against 520 calls and dismal against 50 000.
+    """
+    key = make_key("ns", {"x": 1})
+    ledger.put(key, {"v": 1})
+    for _ in range(9):
+        ledger.register_hit(key)
+    ledger.register_miss()
+    s = ledger.stats()
+    total = s["lifetime_hits"] + s["lifetime_misses"]
+    assert s["lifetime_hits"] / total == 0.9
+
+
+def test_the_tally_file_is_not_mistaken_for_an_entry(ledger: Ledger) -> None:
+    """It must not end in .json: entries are globbed as *.json.
+
+    Otherwise `stats()` would count the tally as an entry and `evict()` would
+    delete it the moment the cache grew past max_entries -- the bookkeeping
+    would be swept away by the very thing it exists to survive.
+    """
+    ledger.put(make_key("ns", {"x": 1}), {"v": 1})
+    ledger.register_miss()
+    assert ledger.stats()["entries"] == 1
+    assert ledger.evict(max_entries=1) == 0
+    assert ledger.stats()["lifetime_misses"] == 1
+
+
+def test_a_corrupt_tally_never_breaks_a_cache_operation(ledger: Ledger) -> None:
+    """The counters are evidence about the cache, not the cache."""
+    key = make_key("ns", {"x": 1})
+    ledger.put(key, {"v": 1})
+    (ledger.dir / "_lifetime.tally").write_text("{ not json", encoding="utf-8")
+    ledger.register_hit(key)  # must not raise
+    assert ledger.get(key) == {"v": 1}
+    assert ledger.stats()["entries"] == 1

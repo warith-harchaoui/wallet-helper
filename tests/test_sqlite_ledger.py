@@ -25,8 +25,11 @@ def test_put_get_and_stats(ledger: SqliteLedger) -> None:
     ledger.register_hit("asr_a")
     ledger.register_hit("asr_a")
     assert ledger.get("asr_a") == {"text": "hi"}
-    assert ledger.stats() == {"entries": 1, "hits": 2}
-    assert ledger.stats("asr") == {"entries": 1, "hits": 2}
+    s = ledger.stats()
+    assert (s["entries"], s["hits"]) == (1, 2)
+    assert s["lifetime_hits"] == 2
+    scoped = ledger.stats("asr")
+    assert (scoped["entries"], scoped["hits"]) == (1, 2)
 
 
 def test_missing_key_returns_none(ledger: SqliteLedger) -> None:
@@ -102,7 +105,8 @@ def test_namespace_like_metacharacters_do_not_leak_across_namespaces(ledger: Sql
     # would also match keys under an unrelated namespace like "aXXXb".
     ledger.put("a_1", 1)
     ledger.put("aXXXb_2", 2)
-    assert ledger.stats("a%") == {"entries": 0, "hits": 0}
+    scoped = ledger.stats("a%")
+    assert (scoped["entries"], scoped["hits"]) == (0, 0)
     ledger.clear("a%")
     assert ledger.stats("a")["entries"] == 1 and ledger.stats("aXXXb")["entries"] == 1
 
@@ -140,3 +144,38 @@ def test_operations_do_not_leak_connections(tmp_path: Path, monkeypatch: pytest.
     for conn in opened:
         with pytest.raises(sqlite3.ProgrammingError):
             conn.execute("SELECT 1")  # closed connections refuse to operate
+
+
+def test_lifetime_tallies_survive_eviction(ledger: SqliteLedger) -> None:
+    """Same contract as the file backend, by a different mechanism.
+
+    `SUM(hits) FROM entries` only ever sees surviving rows, so a DELETE takes
+    the evidence with it. The counters live in their own table for exactly
+    that reason.
+    """
+    for i in range(5):
+        key = f"ns_{i}"
+        ledger.put(key, {"v": i})
+        for _ in range(100):
+            ledger.register_hit(key)
+
+    assert ledger.stats()["hits"] == 500
+    ledger.evict(max_entries=2)
+    after = ledger.stats()
+    assert after["hits"] == 200  # per-entry total leaves with the entries
+    assert after["lifetime_hits"] == 500  # the lifetime tally does not
+
+
+def test_misses_are_counted(ledger: SqliteLedger) -> None:
+    ledger.register_miss()
+    ledger.register_miss()
+    assert ledger.stats()["lifetime_misses"] == 2
+
+
+def test_both_backends_report_the_same_shape(tmp_path) -> None:
+    """A caller swapping backends must not have to swap their reporting code."""
+    from wallet_helper.ledger import Ledger
+
+    file_keys = set(Ledger(cache_dir=str(tmp_path / "f")).stats())
+    sqlite_keys = set(SqliteLedger(db_path=str(tmp_path / "s.db")).stats())
+    assert file_keys == sqlite_keys

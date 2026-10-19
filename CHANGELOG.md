@@ -4,6 +4,65 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [1.2.0] - 2026-10-19
+
+### Added
+
+- **`lifetime_hits` and `lifetime_misses` in `stats()` / `cache_info()`.**
+
+  `hits` is stored inside each record, so `stats()` sums it over the records
+  that still exist — and evicting or expiring an entry therefore destroys the
+  record of every call it ever saved. Measured on five entries with a hundred
+  reuses each:
+
+  ```
+  avant eviction : {'entries': 5, 'hits': 500}
+  evict(max_entries=2)
+  apres eviction : {'entries': 2, 'hits': 200}
+  ```
+
+  500 calls genuinely saved, 200 reported. Sixty per cent of the evidence gone,
+  with nothing raised. The docstring claimed `hits` was "how many real calls
+  were saved", which was false for any cache that had ever evicted or expired
+  anything — and eviction and TTL are this package's own features. **The better
+  a cache housekept, the more it under-reported itself.** Someone tuning
+  `max_entries` would watch the saved-call count fall and reasonably blame the
+  eviction, when it was only the counter forgetting.
+
+  `entries` and `hits` still describe what exists now. The lifetime tallies
+  describe everything the store has ever done, and survive eviction and expiry.
+  They do not survive `clear()`, which removes the store outright — that is an
+  explicit instruction to forget, not automatic housekeeping.
+
+  `lifetime_misses` is what makes the number mean something: a hit count alone
+  cannot say whether a cache is earning its keep, since 500 hits is excellent
+  against 520 calls and dismal against 50 000.
+
+  Both backends, each by the mechanism it needs. The JSON ledger keeps a
+  `_lifetime.tally` file — deliberately not `.json`, because entries are
+  globbed as `*.json` and a `.json` tally would be counted as an entry by
+  `stats()` then deleted by `evict()` as soon as the cache grew. SQLite keeps a
+  `counters` table, which `DELETE FROM entries` cannot reach. A test pins that
+  both backends return the same keys.
+
+- **`register_miss()` on the ledger protocol.** Called at the two public seams
+  (`call` / `acall`), which already returned `(value, hit)` — one site each
+  rather than the four internal miss sites, since a miss counted in three paths
+  out of four would be worse than none. `getattr`-guarded, so a third-party
+  backend written against the older protocol stays valid.
+
+### Changed
+
+- **`stats()` and `cache_info()` return two extra keys.** Additive: any
+  `stats()["hits"]`-style consumer is unaffected. Code comparing the whole dict
+  with `==` will need updating — five of this package's own tests did, and they
+  are better for asserting the fields they were actually about.
+
+- **LANDSCAPE / PAYSAGE gain a `Hit-rate visible` axis**, both maps regenerated
+  through `standpoint`. `functools.lru_cache` scores 4 on it and Redis 5:
+  wallet-helper was behind the standard library here until this release, and
+  the table says so.
+
 ## [1.1.4] - 2026-08-24
 
 ### Fixed

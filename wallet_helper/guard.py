@@ -138,8 +138,27 @@ class Wallet:
         key = make_key(namespace, key_payload)
         if hasattr(self.ledger, "claim"):
             # Claim-capable backend: single-flight across processes and threads.
-            return self._call_via_claim(key, fn, ttl)
-        return self._call_local(key, fn, ttl, stale_while_revalidate)
+            value, hit = self._call_via_claim(key, fn, ttl)
+        else:
+            value, hit = self._call_local(key, fn, ttl, stale_while_revalidate)
+        # Counted here, at the one seam every synchronous path returns through,
+        # rather than at each miss site: a hit tally alone cannot say whether a
+        # cache is earning its keep, and a miss counted in only three of four
+        # paths would be worse than none at all.
+        if not hit:
+            self._record_miss()
+        return value, hit
+
+    def _record_miss(self) -> None:
+        """Count a call the cache could not serve, if the backend tracks it.
+
+        Guarded with ``getattr`` rather than assumed: ``LedgerLike`` is a
+        Protocol, so a third-party backend written against the older contract
+        is still a valid ledger and must keep working.
+        """
+        register = getattr(self.ledger, "register_miss", None)
+        if register is not None:
+            register()
 
     def _call_local(self, key: str, fn: Callable[[], Any], ttl: float | None, swr: bool) -> tuple[Any, bool]:
         """In-process path for the default Ledger: freshness, then single-flight."""
@@ -256,8 +275,12 @@ class Wallet:
         """
         key = make_key(namespace, key_payload)
         if hasattr(self.ledger, "claim"):
-            return await self._acall_via_claim(key, fn, ttl)
-        return await self._acall_local(key, fn, ttl, stale_while_revalidate)
+            value, hit = await self._acall_via_claim(key, fn, ttl)
+        else:
+            value, hit = await self._acall_local(key, fn, ttl, stale_while_revalidate)
+        if not hit:
+            self._record_miss()
+        return value, hit
 
     async def _acall_local(
         self, key: str, fn: Callable[[], Awaitable[Any]], ttl: float | None, swr: bool
