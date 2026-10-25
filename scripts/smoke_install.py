@@ -9,7 +9,7 @@ exercises the *installed* package the way a user first would:
    identical call is served from the on-disk store);
 3. confirm the wrapper's ``cache_info`` / ``cache_clear`` surface works.
 
-The console-script entry points (``wallet-helper``, ``wallet-helper-click``)
+The console-script entry point (``wallet-helper``)
 are checked separately in the workflow, since those prove the ``[project.scripts]``
 wiring landed on PATH. Exit code is non-zero on any failure, so CI goes red.
 

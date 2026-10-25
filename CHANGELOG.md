@@ -4,6 +4,33 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [1.3.0] - 2026-10-25
+
+### Changed
+- **One command line, built with click.** `wallet-helper` now runs the click
+  implementation; the argparse CLI and the `wallet-helper-click` twin are gone,
+  with the `[cli]` extra. `click` is a core dependency, the CLI no longer being
+  optional — so `cli.py` has no import guard left, and `tests/conftest.py` no
+  longer lists it among the modules to skip when an optional dep is missing.
+
+  Parity was verified before the removal by introspecting both parsers: the two
+  doors agreed on all four commands (`stats`, `path`, `clear`, `evict`) and on
+  the global `--dir` / `--sqlite` options.
+
+- `cli_click.py` is now `cli.py`; `cli_argparse.py` is deleted. The two test
+  files collapse into one `tests/test_cli.py`.
+
+### Fixed
+- `-V` had no short form, though the argparse door offered one.
+- The module docstring still described itself as "a second command-line
+  variant" behind an optional extra, and its usage examples still showed
+  `wallet-helper-click`.
+
+### Migration
+`wallet-helper-click <cmd>` and `python -m wallet_helper.cli_argparse <cmd>`
+both become `wallet-helper <cmd>`. `pip install "wallet-helper[cli]"` fails on
+the unknown extra; plain `pip install wallet-helper` carries the CLI.
+
 ## [1.2.0] - 2026-10-19
 
 ### Added

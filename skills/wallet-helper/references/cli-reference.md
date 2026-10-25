@@ -1,7 +1,7 @@
 # wallet-helper CLI reference
 
-Two CLIs over the same four commands. `wallet-helper` (argparse) ships with
-the core package; `wallet-helper-click` (needs `[cli]`) is the click twin.
+One CLI, `wallet-helper`, built with click and shipped with the core package,
+over four commands.
 
 The CLI's job is **inspecting and pruning** the store. Memoization itself
 happens in the library.

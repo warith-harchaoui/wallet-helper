@@ -31,7 +31,7 @@ caching (that is `functools.lru_cache`), general-purpose storage, or queueing.
 | Drop everything | `wallet-helper clear` | n/a | `POST /clear` |
 | Prune by age / size / count | `wallet-helper evict` | n/a | `POST /evict` |
 
-Every command is also reachable through the click CLI (`wallet-helper-click …`,
+Every command is also reachable through the CLI (`wallet-helper …`,
 same flags), and the HTTP server doubles as the MCP surface at `/mcp`.
 
 ## Natural-language phrasings that should fire
@@ -59,7 +59,7 @@ same flags), and the HTTP server doubles as the MCP surface at `/mcp`.
 - **Lease mechanics**: "fencing token", "the leader crashed and nobody picked
   it up", "a stale writer overwrote a fresh result", "lease timeout",
   "heartbeat a long job".
-- **Explicit mentions**: `wallet-helper`, `wallet-helper-click`,
+- **Explicit mentions**: `wallet-helper`,
   `wallet-helper-mcp`, `@memoize`, `Wallet`, `Ledger`, `SqliteLedger`,
   `RemoteLedger`, `LedgerLike`, `make_key`, `default_wallet`,
   "install / run wallet-helper".

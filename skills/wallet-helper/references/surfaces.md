@@ -39,9 +39,9 @@ bare decorator uses.
 
 Logging and file management route through `os_helper` — the suite convention.
 
-## 2. CLIs — argparse (core) and click (`[cli]`)
+## 2. CLI — click (core)
 
-`wallet-helper` and `wallet-helper-click`. See `cli-reference.md`.
+`wallet-helper`. See `cli-reference.md`.
 
 ## 3. HTTP dedup server — FastAPI (`[api]`)
 

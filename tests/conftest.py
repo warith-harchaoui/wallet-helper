@@ -2,7 +2,7 @@
 
 ``--doctest-modules`` (see pyproject.toml) imports every module under
 ``wallet_helper/`` to collect docstring examples. Three surfaces,
-:mod:`wallet_helper.cli_click`, :mod:`wallet_helper.api`, and
+:mod:`wallet_helper.cli`, :mod:`wallet_helper.api`, and
 :mod:`wallet_helper.mcp`, raise ``SystemExit`` on import when their optional
 dependency is missing. On a core install we drop them from collection so the
 suite stays green; when the extras are installed (CI, or a full local env)
@@ -18,8 +18,9 @@ from __future__ import annotations
 import importlib.util
 
 # (module path, dependency it needs): mirror the try/except guards in each file.
+# ``cli.py`` is no longer here: click became a core dependency when the CLI
+# stopped being optional, so the module has no guard left to mirror.
 _OPTIONAL = [
-    ("wallet_helper/cli_click.py", "click"),
     ("wallet_helper/api.py", "fastapi"),
     ("wallet_helper/mcp.py", "fastapi_mcp"),
 ]

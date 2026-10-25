@@ -12,7 +12,7 @@ description: >-
   same API call twice", "don't recompute this across restarts", "two workers
   are doing the same job", "deduplicate concurrent calls", "add a TTL to this
   cache", "clear / evict the cache", "how big is the cache", or names
-  `wallet-helper`, `wallet-helper-click`, `wallet-helper-mcp`, `@memoize`,
+  `wallet-helper`, `wallet-helper-mcp`, `@memoize`,
   `Wallet`, `SqliteLedger`, `RemoteLedger`. Do NOT use for an in-process
   one-shot cache (`functools.lru_cache`), a database, or a message queue.
 license: BSD-3-Clause
@@ -50,7 +50,6 @@ Install:
 
 ```bash
 pip install wallet-helper                  # core: library + argparse CLI
-pip install 'wallet-helper[cli]'           # + the click twin
 pip install 'wallet-helper[api]'           # + the HTTP dedup server
 pip install 'wallet-helper[mcp]'           # + MCP tools over the same app
 ```

@@ -1,19 +1,19 @@
-"""wallet-helper click command line (optional ``[cli]`` extra).
+"""The wallet-helper command line, built with click.
 
-A second command-line variant, same features as
-:mod:`wallet_helper.cli_argparse` but built on click, for those who prefer its
-grouped subcommands and coloured help. It reads and prunes the local ledger; the
-calls themselves are memoized from your own code through
-:class:`wallet_helper.guard.Wallet`.
+It reads and prunes the local ledger. The calls themselves are memoized from
+your own code through :class:`wallet_helper.guard.Wallet` — this module never
+runs anything expensive, it only reports and deletes.
 
-Because click is an optional dependency, importing this module without it
-installed raises a clear, actionable error instead of a bare import failure.
+It used to be the optional twin of an argparse CLI, reachable under a
+``-click`` suffix that named the parsing library rather than the interface.
+Both are gone, and ``click`` is a core dependency now, so there is no import
+guard left to trip over.
 
 Usage
 -----
-``wallet-helper-click stats``
-``python -m wallet_helper.cli_click path``
-``wallet-helper-click clear --yes``
+``wallet-helper stats``
+``python -m wallet_helper.cli path``
+``wallet-helper clear --yes``
 
 Author
 ------
@@ -22,14 +22,7 @@ Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 
 from __future__ import annotations
 
-try:
-    import click
-except ModuleNotFoundError as exc:  # pragma: no cover - only hit without click
-    raise SystemExit(
-        "The click CLI needs the optional 'cli' extra. Install it with\n"
-        "  pip install 'wallet-helper[cli]'\n"
-        "or use the dependency-free CLI: python -m wallet_helper.cli_argparse"
-    ) from exc
+import click
 
 from wallet_helper import __version__
 from wallet_helper.ledger import Ledger, LedgerLike
@@ -42,7 +35,8 @@ def _open_ledger(directory: str | None, sqlite: str | None) -> LedgerLike:
 
 
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
-@click.version_option(__version__, prog_name="wallet-helper")
+# ``-V`` beside ``--version``, as the argparse door offered.
+@click.version_option(__version__, "-V", "--version", prog_name="wallet-helper")
 @click.option(
     "--dir",
     "cache_dir",
@@ -95,7 +89,7 @@ def evict(ledger: LedgerLike, max_entries: int | None, older_than: float | None)
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point for the ``wallet-helper-click`` console script.
+    """Entry point for the ``wallet-helper`` console script.
 
     Parameters
     ----------

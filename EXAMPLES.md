@@ -325,17 +325,16 @@ with osh.temporary_folder() as tmp:
 
 ## 12. Command line
 
-Inspect and manage the store. Two interchangeable tools ship: the argparse one
-(always available) and a click variant (the `[cli]` extra). Point either at a
+Inspect and manage the store with the `wallet-helper` command. Point it at a
 JSON directory with `--dir` or a SQLite file with `--sqlite`.
 
 ```bash
-python -m wallet_helper.cli_argparse stats            # entries and calls saved
-python -m wallet_helper.cli_argparse path              # where the store lives
-python -m wallet_helper.cli_argparse clear             # empty the store
-python -m wallet_helper.cli_argparse evict --older-than 604800   # drop entries older than a week
+wallet-helper stats                            # entries and calls saved
+wallet-helper path                             # where the store lives
+wallet-helper clear                            # empty the store
+wallet-helper evict --older-than 604800        # drop entries older than a week
 
-wallet-helper-click --sqlite ./ledger.db stats         # inspect a SQLite store
-wallet-helper-click evict --max-entries 1000           # keep only the newest 1000
-wallet-helper-click clear --yes                        # skip the confirmation prompt
+wallet-helper --sqlite ./ledger.db stats       # inspect a SQLite store
+wallet-helper evict --max-entries 1000         # keep only the newest 1000
+wallet-helper clear --yes                      # skip the confirmation prompt
 ```

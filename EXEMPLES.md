@@ -338,17 +338,17 @@ with osh.temporary_folder() as tmp:
 ## 12. Ligne de commande
 
 Inspecter et gérer le magasin. Deux outils interchangeables sont fournis :
-l'un en argparse (toujours disponible), l'autre en click (extra `[cli]`).
+la commande `wallet-helper`.
 On pointe l'un ou l'autre vers un répertoire JSON avec `--dir` ou vers un
 fichier SQLite avec `--sqlite`.
 
 ```bash
-python -m wallet_helper.cli_argparse stats            # entrées et appels sauvegardés
-python -m wallet_helper.cli_argparse path              # emplacement du magasin
-python -m wallet_helper.cli_argparse clear             # vide le magasin
-python -m wallet_helper.cli_argparse evict --older-than 604800   # supprime les entrées vieilles de plus d'une semaine
+wallet-helper stats                            # entrées et appels sauvegardés
+wallet-helper path                             # emplacement du magasin
+wallet-helper clear                            # vide le magasin
+wallet-helper evict --older-than 604800        # supprime les entrées vieilles de plus d'une semaine
 
-wallet-helper-click --sqlite ./ledger.db stats         # inspecte un magasin SQLite
-wallet-helper-click evict --max-entries 1000           # ne garde que les 1000 plus récentes
-wallet-helper-click clear --yes                        # saute la confirmation
+wallet-helper --sqlite ./ledger.db stats       # inspecte un magasin SQLite
+wallet-helper evict --max-entries 1000         # ne garde que les 1000 plus récentes
+wallet-helper clear --yes                      # saute la confirmation
 ```

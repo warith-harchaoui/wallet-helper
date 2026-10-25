@@ -33,7 +33,7 @@ Battle-tested: 113 tests, a green CI matrix across Python 3.10 to 3.13 on Linux 
 - **library** with `Wallet` and the `@memoize` decorator (sync and `async def`), over a `Ledger` (JSON files), a `SqliteLedger` (one shared file), or a `RemoteLedger` (an HTTP server). In-process single-flight is built in.
 - **cross-process single-flight** through the SQLite backend or the server, with a fencing token (a random, unique value handed out with each lease; a new leader taking over a stale lease gets a fresh one, so a late write carrying the old value no longer matches and is rejected) so a crashed or stalled leader cannot disrupt a new leader's lease, a lease timeout so a dead leader never blocks waiters, and a heartbeat so a long job keeps its lease. Duplicates coalesce as long as the leader finishes within its lease or keeps a heartbeat.
 - **time-to-live and eviction**: per-entry `ttl`, optional stale-while-revalidate, an `evict` policy by age or size, and an automatic size cap (`max_entries`).
-- **`wallet-helper` / `cli_argparse`** and **`wallet-helper-click`**: inspect, clear, and evict the store.
+- **`wallet-helper`**: inspect, clear, and evict the store.
 - **HTTP dedup server** (the `[api]` extra) plus `RemoteLedger`, so many clients on any host share one dedup point.
 - **MCP tools** (the `[mcp]` extra): the same HTTP dedup server exposed as MCP tools for any MCP-aware agent host.
 
@@ -59,10 +59,9 @@ cd wallet-helper
 pip install -e .
 ```
 
-The command-line and HTTP surfaces are opt-in extras:
+The CLI ships with the core install. The HTTP surfaces are opt-in extras:
 
 ```bash
-pip install "wallet-helper[cli]"   # click CLI variant    -> click
 pip install "wallet-helper[api]"   # HTTP dedup server     -> fastapi, uvicorn
 pip install "wallet-helper[mcp]"   # MCP tools + the above -> fastapi-mcp
 ```
@@ -155,14 +154,12 @@ async def fetch(url):
     return await http_get(url)
 ```
 
-Two command-line tools inspect and manage the store (it defaults to `$WALLET_HELPER_DIR`, then `~/.cache/wallet-helper`):
+The `wallet-helper` command inspects and manages the store (it defaults to `$WALLET_HELPER_DIR`, then `~/.cache/wallet-helper`):
 
 ```bash
-python -m wallet_helper.cli_argparse stats   # how many results are cached and how many calls they saved
-python -m wallet_helper.cli_argparse path    # where the store lives
-python -m wallet_helper.cli_argparse clear    # empty the store
-
-wallet-helper-click stats                     # same, via the click variant
+wallet-helper stats   # how many results are cached and how many calls they saved
+wallet-helper path    # where the store lives
+wallet-helper clear   # empty the store
 ```
 
 For a shared store and cross-process single-flight, use the SQLite backend or the HTTP server. See [EXAMPLES.md](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md).
