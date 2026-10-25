@@ -27,11 +27,16 @@ classifiers = [
 ]
 # One dependency: os-helper, the shared utility layer of the AI Helpers suite
 # (content-addressed hashing, temp folders, path helpers, logging).
-dependencies = ["os-helper>=2.0.0,<4"]
+dependencies = [
+    "os-helper>=2.0.0,<4",
+    # click: the CLI is built with it and is the only command line this
+    # package has, so the dependency cannot be optional either. It used to
+    # sit in the [cli] extra beside an always-available argparse CLI.
+    "click>=8.1,<9",
+]
 
 [project.optional-dependencies]
 # The command-line and HTTP surfaces are opt-in extras; install what you need.
-# The argparse CLI needs no extra and is always available as
 # FastAPI HTTP surface: the centralized dedup server.
 api = ["fastapi>=0.110", "uvicorn>=0.29"]
 # MCP surface (wallet_helper.mcp) — exposes the SAME FastAPI app from [api] as
