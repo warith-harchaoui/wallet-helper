@@ -1,18 +1,21 @@
 # Continuous integration for wallet-helper.
 #
-# Three jobs:
+# Four jobs:
 #   - lint:  ruff check + ruff format --check (PEP 8, import order, and
 #            formatting all enforced automatically).
-#   - test:  the full pytest suite across the supported Python range, with the
-#            optional surfaces (click / fastapi) installed so every surface is
-#            exercised. Linux (🐧) on every version, macOS (🍎) on the newest.
-#            The exhaustive suite runs where it is fast and reliable.
+#   - test:  the full pytest suite on one Python (3.12) on Linux (🐧), with the
+#            optional surface (fastapi) installed so every surface is exercised.
+#            Deliberately a light gate: the multi-version sweep runs locally,
+#            before the push.
 #   - smoke: the install procedure itself, on all three OSes a user installs on
-#            (🐧 Linux, 🍎 macOS, 🪟 Windows). It installs the package + extras
-#            and then proves it actually works: import, both CLI entry points,
-#            and a real memoize round-trip against the on-disk store. This is
-#            what "verified on Windows too" means here, without paying for the
-#            whole (spawn-heavy, minutes-slow on Windows) suite on that runner.
+#            (🐧 Linux, 🍎 macOS, 🪟 Windows). It installs the package + the api
+#            extra and then proves it actually works: import, the one
+#            `wallet-helper` command, and a real memoize round-trip against the
+#            on-disk store. This is what "verified on Windows too" means here,
+#            without paying for the whole (spawn-heavy, minutes-slow on Windows)
+#            suite on that runner.
+#   - floor: `pip install .` + `import wallet_helper` on Python 3.10, so the
+#            `requires-python = ">=3.10"` promise has evidence behind it.
 name: ci
 
 on:

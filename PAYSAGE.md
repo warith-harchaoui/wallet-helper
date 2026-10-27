@@ -25,9 +25,13 @@ Deux problèmes font qu'un appel lourd tourne deux fois :
 La plupart des outils ne traitent qu'un seul problème. wallet-helper traite les
 deux, avec la même clé.
 
-## Comparaison des fonctionnalités
+## En un coup d'œil
 
 Noté de ⭐ (absent ou faible) à ⭐⭐⭐⭐⭐ (meilleur de sa catégorie) par colonne.
+Ces notes sont la lecture que fait un mainteneur de la documentation de chaque
+projet, pas un banc d'essai ; la section
+[Sources et date de relevé](#sources-et-date-de-relevé) dit d'où elles viennent
+puis quand.
 
 - **Persistant** : les résultats survivent à un redémarrage de processus.
 - **Adresse par contenu d'entrée** : la clé porte sur le contenu d'un fichier ou des octets bruts, pas seulement sur les arguments.
@@ -38,6 +42,9 @@ Noté de ⭐ (absent ou faible) à ⭐⭐⭐⭐⭐ (meilleur de sa catégorie) p
 - **Décorateur** : ergonomie transparente `@decorator`.
 - **Support asynchrone** : fonctionne avec les coroutines `async def`, pas seulement les fonctions synchrones.
 - **Local (sans service)** : fonctionne sans base de données ni serveur de cache séparé. Il s'agit de l'empreinte de déploiement, pas du nombre de dépendances.
+- **Taux de touche visible** : le magasin sait dire s'il est rentable — pas
+  seulement combien d'entrées il détient, mais combien d'appels il a servis puis
+  manqués depuis le début.
 
 <!-- TABLE:START -->
 | Mise en cache | Persistant | Adresse par contenu d'entrée | Single-flight intra-processus | Single-flight inter-processus | TTL / expiration | Serveur pour plusieurs clients | Décorateur | Support asynchrone | Local (sans service) | Taux de touche visible |
@@ -65,8 +72,38 @@ Représentation 2D du tableau ci-dessus.
 
 ![Carte de positionnement](https://raw.githubusercontent.com/warith-harchaoui/wallet-helper/main/assets/paysage.png)
 
-La carte est un résumé en 2D des 9 critères : à lire comme une forme, pas comme un classement. « wallet-helper » se situe dans le coin en haut à droite. Les axes se lisent **Horizontal : Autonomie ↔ Efficacité** et **Vertical : Adaptabilité ↔ Créativité**.
+La carte est un résumé en 2D des 10 critères : à lire comme une forme, pas comme un classement. « wallet-helper » se situe dans le coin en haut à droite. Les axes se lisent **Horizontal : Autonomie ↔ Efficacité** et **Vertical : Adaptabilité ↔ Créativité**.
 <!-- FIGURE:END -->
+
+## Positionnement
+
+Les colonnes qui situent wallet-helper sont **Adresse par contenu d'entrée** puis
+les deux colonnes de single-flight, à lire avec **Local (sans service)**.
+
+Prises une par une, elles découpent le terrain proprement. La persistance est
+partout : `joblib.Memory`, `diskcache`, `cachier` et `requests-cache` survivent
+tous à un redémarrage. La coalescence n'est pas rare non plus : le
+`singleflight` de Go en est la primitive de référence, `dogpile.cache` a
+`get_or_create` depuis des années, `cashews` et `cacheme` livrent une protection
+anti-avalanche. L'adressage par contenu existe aussi — c'est la signature de
+`joblib.Memory`.
+
+Ce qui est rare, c'est de tenir les trois *avec une seule clé et sans service*.
+Les outils qui fusionnent entre processus le font le plus souvent en déléguant à
+quelque chose qu'il faut faire tourner : redis pour `dogpile.cache`, `cashews`
+puis `cacheme`, DynamoDB ou redis pour AWS Powertools Idempotency. Chez eux,
+« local » et « inter-processus » ne sont pas vrais en même temps. La voie
+inter-processus de wallet-helper est un bail protégé dans un fichier SQLite, ou
+dans son propre petit serveur HTTP : un portable et une flotte exécutent le même
+code, seul le backend change.
+
+Cette forme — le coin en haut à droite de la carte — s'achète au prix de la
+forme opposée. Redis occupe volontairement l'autre bout de l'axe Autonomie ↔
+Efficacité : c'est le magasin partagé et exploité sur lequel beaucoup de ces
+outils s'appuient et rien ici ne lui dispute l'échelle d'une flotte.
+wallet-helper revendique délibérément moins — un fichier ou un dossier, aucun
+démon, rien à exploiter — et devient le mauvais outil dès qu'on veut un cache
+que plusieurs équipes administrent comme une infrastructure.
 
 ## Avantages et inconvénients
 
@@ -120,3 +157,82 @@ wallet-helper emprunte délibérément des idées éprouvées :
   `functools.lru_cache` et l'éviction par namespace, des tags de `diskcache`.
 - La durée de vie par entrée et le stale-while-revalidate, de `requests-cache`
   (`expire_after`), `diskcache` (`expire`) et `dogpile.cache`.
+
+## Quand choisir quoi
+
+La plupart du temps, la réponse honnête n'est pas ce paquet.
+
+- **Un seul processus, fonction peu coûteuse, aucun redémarrage à encaisser.**
+  `functools.lru_cache` ou `functools.cache`. Bibliothèque standard, aucun
+  fichier, rien à nettoyer. On ne passe à un magasin persistant qu'une fois
+  qu'un résultat mérite d'être conservé entre deux exécutions.
+- **Un pipeline scientifique dont les entrées sont des tableaux et des
+  dataframes.** `joblib.Memory`. Il hache le contenu des arguments en
+  connaissant numpy puis invalide quand le source de la fonction change, ce que
+  wallet-helper ne fait pas — modifiez ici le corps d'une fonction mémoïsée et
+  l'ancien résultat continue d'être servi jusqu'à ce que vous vidiez son
+  namespace.
+- **Un gros cache clé/valeur local sur un seul hôte.** `diskcache`. Rapide,
+  mature, avec tags et éviction en masse, plus `memoize_stampede` s'il faut
+  fusionner les appels.
+- **Mettre en cache des réponses HTTP selon leur sémantique de cache-control.**
+  `requests-cache` pour `requests`, [hishel](https://github.com/karpetrosyan/hishel)
+  pour HTTPX. Ils lisent les en-têtes ; wallet-helper ne les regarde jamais.
+- **Une base de code async-first où redis tourne déjà.** `cashews` ou `cacheme`.
+  Tous deux sont conçus pour `async def` et font bien la protection
+  anti-avalanche ; le verrou distribué est l'affaire de redis.
+- **Un cache que plusieurs équipes exploitent comme une infrastructure.** Redis,
+  avec votre propre verrou par-dessus. C'est le pôle opposé à wallet-helper puis
+  la bonne réponse à cette échelle.
+- **De l'idempotence pour un gestionnaire de requêtes, sur AWS.** AWS Powertools
+  Idempotency, avec DynamoDB. Conçu exactement pour ce cycle de vie.
+- **Les paraphrases d'une invite doivent tomber sur la même réponse en cache.**
+  GPTCache. C'est de la correspondance sémantique, ce que wallet-helper refuse
+  délibérément : ici, c'est une touche exacte adressée par contenu ou un échec.
+
+Choisissez wallet-helper quand plusieurs de ces points sont vrais à la fois :
+
+- L'appel coûte assez cher pour que le relancer soit une dépense réelle : une
+  API facturée, un modèle lent, un job long.
+- Un résultat mérite d'être conservé d'une exécution à l'autre, pas seulement
+  au sein d'une seule.
+- L'entrée est — ou contient — un **fichier ou un blob** et vous voulez qu'une
+  copie sous un autre nom tombe sur la même entrée.
+- Deux appelants peuvent plausiblement démarrer le même appel en même temps et
+  vous voulez que le second attende plutôt que de payer.
+- Vous voulez que cela tienne **entre processus** sans monter d'abord redis ou
+  DynamoDB : un fichier SQLite, voire un petit serveur HTTP qui est le vôtre.
+
+## Sources et date de relevé
+
+**Relevé le 27/10/2026.** Les étoiles puis les avantages/inconvénients sont une
+lecture qualitative de la documentation et du README de chaque projet, faite par
+le mainteneur de ce paquet. Aucun banc d'essai n'a été lancé, aucun chiffre de
+latence ou de débit n'est avancé dans ce document et aucun numéro de version
+n'est cité : une étoile ici dit « la documentation décrit cette capacité », pas
+« nous l'avons mesurée ».
+
+Traitez les notes portant sur le logiciel des autres comme un point de départ et
+vérifiez la colonne qui vous importe dans leur propre documentation, car ces
+projets bougent et ce fichier ne bouge pas avec eux.
+
+- `functools.lru_cache` — <https://docs.python.org/3/library/functools.html>
+- joblib — <https://joblib.readthedocs.io/>
+- diskcache — <https://grantjenks.com/docs/diskcache/>
+- cachier — <https://github.com/python-cachier/cachier>
+- requests-cache — <https://requests-cache.readthedocs.io/en/stable/>
+- dogpile.cache — <https://dogpilecache.sqlalchemy.org/>
+- Redis — <https://redis.io/docs/latest/>
+- `singleflight` de Go — <https://pkg.go.dev/golang.org/x/sync/singleflight>
+- AWS Powertools Idempotency —
+  <https://docs.powertools.aws.dev/lambda/python/latest/utilities/idempotency/>
+- Requêtes idempotentes Stripe — <https://docs.stripe.com/api/idempotent_requests>
+- Mise en cache litellm — <https://docs.litellm.ai/docs/proxy/caching>
+- cashews — <https://github.com/Krukov/cashews>
+- cacheme — <https://github.com/Yiling-J/cacheme>
+- GPTCache — <https://github.com/zilliztech/GPTCache>
+- hishel — <https://github.com/karpetrosyan/hishel>
+
+La ligne wallet-helper est l'exception : elle est relevée sur le code puis la
+suite de tests de ce dépôt, à la version inscrite dans `pyproject.toml`. C'est
+donc la seule ligne vérifiée mécaniquement plutôt qu'à la lecture.

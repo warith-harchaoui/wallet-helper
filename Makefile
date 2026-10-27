@@ -5,7 +5,7 @@
 # failures show up locally rather than in a pull request.
 #
 # Targets:
-#   make install   editable install with the dev, cli, and api extras
+#   make install   editable install with the dev and api extras
 #   make fmt        autofix lints (ruff --fix), leaving hand-formatting intact
 #   make lint       lint only, no changes (what CI checks)
 #   make test       run the test suite (pytest + doctests)
@@ -15,7 +15,7 @@
 .PHONY: install fmt lint test all
 
 install:
-	python -m pip install -e ".[dev,cli,api]"
+	python -m pip install -e ".[dev,api]"
 
 fmt:
 	ruff check --fix .

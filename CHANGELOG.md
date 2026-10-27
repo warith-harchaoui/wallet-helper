@@ -4,6 +4,55 @@ All notable changes to wallet-helper are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/), and the project adheres to
 semantic versioning.
 
+## [Unreleased]
+
+### Documentation
+
+- **The six documents are on the suite spine** (CODING.md rules 16-18). In
+  LISEZMOI, `Prise en main` is now `Prise en main rapide`, the spelling the rest
+  of the suite uses, so the two READMEs name the same section.
+  LANDSCAPE / PAYSAGE gained `Positioning` /
+  `Positionnement`, `When to pick what` / `Quand choisir quoi` and
+  `Sources and as-of date` / `Sources et date de relevé`, and
+  `Feature comparison` became `At a glance` / `En un coup d'œil`.
+  EXAMPLES / EXEMPLES gained the language-switch links, a
+  `Table of Contents` / `Table des matières` heading, a `Setup` /
+  `Mise en place` section carrying the install line and the imports every
+  snippet assumes, and a `Troubleshooting` / `Dépannage` section;
+  `12. Command line` is now the unnumbered `Command line` the rule asks for.
+
+### Fixed
+
+- **Documented outputs that did not match what the code prints.** The
+  stale-while-revalidate example claimed a final `(2, True)` and really printed
+  `(3, False)`: the `ttl` on a stale-while-revalidate call is the one the
+  *background refresh* stores under, so asking for `ttl=0.05` again refreshed
+  into an entry that expired 50 ms later and the next caller recomputed. The
+  example now passes `ttl=60` and says why. `cache_info()` was still shown
+  returning `{'entries', 'hits'}` — the two lifetime tallies added in 1.2.0 were
+  missing from every printed example, including the README's, where
+  `lifetime_misses` was given as `0` when the two calls described make it `1`.
+  Every self-contained block was executed and its output pasted from the run.
+
+- **Stale claims about the repository itself.** "113 tests" (122 are collected),
+  "a green CI matrix across Python 3.10 to 3.13 on Linux and macOS" (the test
+  job is one Python on Linux, there are four jobs, and the README never
+  mentioned `floor`), and "both command-line tools respond" for the smoke job,
+  which runs `wallet-helper` only. The `ci.yml` header comment said "Three jobs"
+  and "both CLI entry points" for the same reason.
+
+- **`make install` still asked for the `[cli]` extra**, deleted in 1.3.0. pip
+  only warns on an unknown extra, so this stayed wrong in silence — the same
+  failure mode that turned the smoke job red on three runners at once.
+
+- EXEMPLES.md § 12 read "Deux outils interchangeables sont fournis : la commande
+  `wallet-helper`." — a half-finished edit from that same removal. LISEZMOI
+  likewise announced "deux outils en ligne de commande", and its quick start
+  linked the English EXAMPLES.md.
+
+- LANDSCAPE / PAYSAGE described nine criteria while the star table has ten:
+  `Hit-rate visible` / `Taux de touche visible` had no entry in the legend.
+
 ## [1.3.0] - 2026-10-25
 
 ### Changed

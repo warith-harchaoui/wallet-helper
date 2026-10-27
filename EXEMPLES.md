@@ -1,9 +1,21 @@
 # Exemples wallet-helper
 
-Un livre de recettes des usages courants. Chaque bloc Python est autonome et
-s'appuie sur un magasin temporaire : on peut le coller tel quel dans un REPL
-et regarder le résultat.
+🇫🇷 Français · [🇬🇧 EXAMPLES.md](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md)
 
+Un livre de recettes des usages courants. La plupart des blocs Python sont
+autonomes et écrivent dans un magasin temporaire : on peut en coller un dans un
+REPL et regarder le résultat. La sortie notée à côté de chaque `print` est celle
+que le bloc a réellement affichée lors de la dernière vérification de ce
+fichier ; `tests/test_examples_md.py` rejoue chaque bloc autonome, donc un
+changement d'API casse la CI plutôt que la lecture.
+
+Trois blocs ne sont volontairement **pas** exécutables tels quels et le disent
+là où ils apparaissent : les deux qui appellent un `call_some_paid_api` fictif
+puis le client du serveur HTTP de l'exemple 7, qui suppose ce serveur démarré.
+
+## Table des matières
+
+- [Mise en place](#mise-en-place)
 - [1. Mémoïser un appel coûteux](#1-mémoïser-un-appel-coûteux)
 - [2. Le décorateur, avec cache_info et cache_clear](#2-le-décorateur-avec-cache_info-et-cache_clear)
 - [3. Ignorer un argument volatil](#3-ignorer-un-argument-volatil)
@@ -15,7 +27,34 @@ et regarder le résultat.
 - [9. Durée de vie et éviction](#9-durée-de-vie-et-éviction)
 - [10. Stale-while-revalidate](#10-stale-while-revalidate)
 - [11. Fonctions asynchrones](#11-fonctions-asynchrones)
-- [12. Ligne de commande](#12-ligne-de-commande)
+- [Ligne de commande](#ligne-de-commande)
+- [Dépannage](#dépannage)
+
+## Mise en place
+
+La bibliothèque puis la commande `wallet-helper` arrivent avec l'installation de
+base. Seuls les exemples 7 et 8 demandent davantage, parce qu'ils mettent en jeu
+le serveur HTTP de déduplication :
+
+```bash
+pip install wallet-helper            # bibliothèque + la commande wallet-helper
+pip install "wallet-helper[api]"     # ajoute le serveur HTTP de dédup (exemples 7, 8)
+```
+
+Tous les extraits ci-dessous sont écrits avec ces noms et chaque bloc répète
+ceux dont il a besoin, pour qu'on puisse commencer la lecture à n'importe quelle
+section. `osh`, c'est
+[os-helper](https://github.com/warith-harchaoui/os-helper), la couche utilitaire
+partagée de la suite, d'où vient `temporary_folder` :
+
+```python
+import os_helper as osh
+from wallet_helper import Wallet, Ledger, SqliteLedger, RemoteLedger, make_key, memoize
+```
+
+Le magasin que les exemples ne redéfinissent *pas* se trouve sous
+`$WALLET_HELPER_DIR`, à défaut `~/.cache/wallet-helper`. `wallet-helper path`
+l'affiche.
 
 ## 1. Mémoïser un appel coûteux
 
@@ -59,10 +98,18 @@ with osh.temporary_folder() as tmp:
         return n * n
 
     print(square(9), square(9), square(10))  # 81 81 100
-    print(square.cache_info())  # {'entries': 2, 'hits': 1}
+    print(square.cache_info())
+    # {'entries': 2, 'hits': 1, 'lifetime_hits': 1, 'lifetime_misses': 2}
     square.cache_clear()
-    print(square.cache_info())  # {'entries': 0, 'hits': 0}
+    print(square.cache_info())
+    # {'entries': 0, 'hits': 0, 'lifetime_hits': 1, 'lifetime_misses': 2}
 ```
+
+`entries` puis `hits` décrivent ce que contient le magasin **maintenant** : un
+`cache_clear()` les remet donc à zéro. `lifetime_hits` et `lifetime_misses` sont
+des totaux cumulés à l'échelle du magasin, qui survivent à un vidage, à une
+éviction puis à une expiration — c'est ce qui permet de calculer un taux de
+touche qui veut dire quelque chose.
 
 ## 3. Ignorer un argument volatil
 
@@ -118,7 +165,8 @@ with osh.temporary_folder() as tmp:
 
 En pratique on ne construit jamais ce payload soi-même : `@memoize` s'en
 charge, si bien que deux copies d'un même fichier à des chemins différents ne
-déclenchent l'appel coûteux qu'une seule fois.
+déclenchent l'appel coûteux qu'une seule fois. Illustratif —
+`call_some_paid_api` tient la place de votre propre appel lent et facturé :
 
 ```python
 from wallet_helper import memoize
@@ -241,7 +289,8 @@ meneur arrive. Pour un travail long, le meneur maintient son bail actif avec
 inter-processus sans écrire une ligne de protocole, il suffit de le passer à
 un `Wallet` et d'utiliser `@memoize` comme d'habitude. Chaque hôte qui pointe
 vers le même serveur se déduplique contre le même bail. Il n'utilise que la
-bibliothèque standard.
+bibliothèque standard. Illustratif à deux titres : l'URL doit être un serveur
+que vous faites réellement tourner puis `call_some_paid_api` est le vôtre :
 
 ```python
 from wallet_helper import Wallet, RemoteLedger, memoize
@@ -275,9 +324,13 @@ with osh.temporary_folder() as tmp:
 
     ledger.put("old", 1, ttl=0.0)  # déjà expirée
     print(ledger.evict())  # 1   -> entrée expirée retirée
-    print(ledger.evict(max_entries=10))  # ne garde que les 10 plus récentes
-    print(ledger.evict(older_than=86400))  # supprime les entrées vieilles de plus d'un jour
+    print(ledger.evict(max_entries=10))  # 0   -> une seule entrée, rien à plafonner
+    print(ledger.evict(older_than=86400))  # 0   -> cette entrée a quelques secondes
 ```
+
+`evict` renvoie le nombre d'entrées retirées : c'est bien le `0` des deux
+derniers appels qui fait la démonstration, le magasin tenait déjà dans les deux
+limites.
 
 ## 10. Stale-while-revalidate
 
@@ -300,10 +353,18 @@ with osh.temporary_folder() as tmp:
 
     print(wallet.call("cfg", {}, build, ttl=0.05))  # (1, False)  -> calculé
     time.sleep(0.06)  # on laisse expirer
-    print(wallet.call("cfg", {}, build, ttl=0.05, stale_while_revalidate=True))  # (1, True) périmé désormais
-    time.sleep(0.2)  # le rafraîchissement en arrière-plan s'exécute
-    print(wallet.call("cfg", {}, build, ttl=100))  # (2, True)   -> valeur rafraîchie
+    print(
+        wallet.call("cfg", {}, build, ttl=60, stale_while_revalidate=True)
+    )  # (1, True) -> périmé, servi tout de suite
+    time.sleep(0.2)  # le rafraîchissement en arrière-plan aboutit
+    print(wallet.call("cfg", {}, build, ttl=60))  # (2, True)   -> valeur rafraîchie
 ```
+
+Le `ttl` passé à l'appel stale-while-revalidate est celui sous lequel le
+**rafraîchissement** enregistre, pas seulement la fenêtre à l'aune de laquelle
+l'entrée courante est jugée. Redemander `ttl=0.05` rafraîchirait vers une entrée
+qui expire 50 ms plus tard : l'appelant suivant recalculerait donc sans jamais
+voir la valeur rafraîchie — d'où le `ttl=60` du troisième appel.
 
 ## 11. Fonctions asynchrones
 
@@ -335,20 +396,76 @@ with osh.temporary_folder() as tmp:
     print(asyncio.run(main()))  # (36, 36, 36, 1)
 ```
 
-## 12. Ligne de commande
+## Ligne de commande
 
-Inspecter et gérer le magasin. Deux outils interchangeables sont fournis :
-la commande `wallet-helper`.
-On pointe l'un ou l'autre vers un répertoire JSON avec `--dir` ou vers un
+Une seule commande est livrée avec le paquet : `wallet-helper`, avec quatre
+sous-commandes. On la pointe vers un répertoire JSON avec `--dir` ou vers un
 fichier SQLite avec `--sqlite`.
 
 ```bash
-wallet-helper stats                            # entrées et appels sauvegardés
+wallet-helper stats                            # entrées et appels économisés
 wallet-helper path                             # emplacement du magasin
-wallet-helper clear                            # vide le magasin
+wallet-helper clear                            # vide le magasin (demande confirmation)
 wallet-helper evict --older-than 604800        # supprime les entrées vieilles de plus d'une semaine
 
 wallet-helper --sqlite ./ledger.db stats       # inspecte un magasin SQLite
 wallet-helper evict --max-entries 1000         # ne garde que les 1000 plus récentes
 wallet-helper clear --yes                      # saute la confirmation
 ```
+
+`stats` affiche trois lignes — l'emplacement du magasin, son nombre d'entrées
+puis les appels que ces entrées ont économisés :
+
+```text
+ledger: /Users/vous/.cache/wallet-helper
+entries: 0
+calls saved (cache hits): 0
+```
+
+Installer l'extra `[mcp]` ajoute une seconde commande, `wallet-helper-mcp`, qui
+sert l'API HTTP de l'exemple 7 en même temps qu'un endpoint MCP sur `/mcp`.
+
+## Dépannage
+
+**Le résultat en cache est périmé après que j'ai modifié la fonction.** La clé,
+c'est le namespace plus les arguments — jamais le source de la fonction. Changez
+le corps et tous les résultats stockés restent valides du point de vue de
+wallet-helper. Videz ce namespace — ou changez-en :
+
+```python
+import os_helper as osh
+from wallet_helper import Wallet, Ledger
+
+with osh.temporary_folder() as tmp:
+    wallet = Wallet(Ledger(tmp))
+
+    print(wallet.call("rate", {"ccy": "EUR"}, lambda: 1.08))  # (1.08, False)
+    print(wallet.call("rate", {"ccy": "EUR"}, lambda: 9.99))  # (1.08, True) -> ancienne valeur
+    wallet.ledger.clear("rate")  # n'oublie que ce namespace
+    print(wallet.call("rate", {"ccy": "EUR"}, lambda: 9.99))  # (9.99, False)
+```
+
+`cache_clear()` sur une fonction mémoïsée fait la même chose pour son propre
+namespace.
+
+**`stale_while_revalidate=True` n'a rien fait.** C'est implémenté pour le
+`Ledger` en processus uniquement. `SqliteLedger` puis `RemoteLedger` passent par
+le bail claim/submit, où le drapeau est ignoré et une entrée expirée est
+recalculée de façon synchrone — l'appel renvoie donc `(2, False)`, pas le
+`(1, True)` périmé de l'exemple 10.
+
+**`cache_info()` affiche des totaux à vie inattendus.** `entries` puis `hits`
+sont limités au namespace de la fonction décorée ; `lifetime_hits` et
+`lifetime_misses` sont par construction à l'échelle du magasin, parce qu'ils ne
+sont pas attachés aux entrées et n'ont donc rien sur quoi être filtrés. Deux
+fonctions mémoïsées qui partagent un magasin partagent ces deux totaux.
+
+**Un appel qui échoue n'est jamais mis en cache.** Si le travail lève, rien
+n'est stocké et l'exception se propage : l'appel suivant réessaie. Le raté est
+tout de même compté, d'où un `lifetime_misses` qui grimpe pendant que `entries`
+reste à `0`.
+
+**`wallet-helper stats` annonce un magasin vide.** Presque toujours parce qu'il
+regarde ailleurs. Lancez `wallet-helper path`, comparez avec le `Ledger` que
+votre code construit et rappelez-vous que `$WALLET_HELPER_DIR` prime sur
+`~/.cache/wallet-helper`.

@@ -8,7 +8,6 @@
 
 Never run the same heavy call twice. wallet-helper is persistent memoization for expensive calls (a paid API request, a slow model, any heavy function): an identical call is served from a local store instead of running again, across process restarts. When two identical calls start at the same time, they collapse into one, so the second waits for the first and reuses its result instead of running in parallel (single-flight).
 
-
 ## Documentation
 
 [💻 Documentation](https://deraison.ai/ai-helpers/docs/wallet-helper-doc/)
@@ -28,14 +27,14 @@ It is content-addressed, so a renamed input file still hits and two different in
 
 ## Status
 
-Battle-tested: 113 tests, a green CI matrix across Python 3.10 to 3.13 on Linux and macOS plus an install smoke test on Windows, and semantic-versioned releases on PyPI (see the badges above). What ships today:
+Battle-tested: 122 tests, a green CI gate across four jobs, and semantic-versioned releases on PyPI (see the badges above). What ships today:
 
 - **library** with `Wallet` and the `@memoize` decorator (sync and `async def`), over a `Ledger` (JSON files), a `SqliteLedger` (one shared file), or a `RemoteLedger` (an HTTP server). In-process single-flight is built in.
 - **cross-process single-flight** through the SQLite backend or the server, with a fencing token (a random, unique value handed out with each lease; a new leader taking over a stale lease gets a fresh one, so a late write carrying the old value no longer matches and is rejected) so a crashed or stalled leader cannot disrupt a new leader's lease, a lease timeout so a dead leader never blocks waiters, and a heartbeat so a long job keeps its lease. Duplicates coalesce as long as the leader finishes within its lease or keeps a heartbeat.
 - **time-to-live and eviction**: per-entry `ttl`, optional stale-while-revalidate, an `evict` policy by age or size, and an automatic size cap (`max_entries`).
-- **`wallet-helper`**: inspect, clear, and evict the store.
+- **`wallet-helper`**: one command, with `stats`, `path`, `clear`, and `evict`, to inspect and prune the store.
 - **HTTP dedup server** (the `[api]` extra) plus `RemoteLedger`, so many clients on any host share one dedup point.
-- **MCP tools** (the `[mcp]` extra): the same HTTP dedup server exposed as MCP tools for any MCP-aware agent host.
+- **MCP tools** (the `[mcp]` extra): the same HTTP dedup server exposed as MCP tools for any MCP-aware agent host, served by a second command, `wallet-helper-mcp`.
 
 ## Installation
 
@@ -59,14 +58,14 @@ cd wallet-helper
 pip install -e .
 ```
 
-The CLI ships with the core install. The HTTP surfaces are opt-in extras:
+The `wallet-helper` command ships with the core install. The HTTP surfaces are opt-in extras:
 
 ```bash
 pip install "wallet-helper[api]"   # HTTP dedup server     -> fastapi, uvicorn
 pip install "wallet-helper[mcp]"   # MCP tools + the above -> fastapi-mcp
 ```
 
-Run the MCP server with `wallet-helper-mcp` (HTTP API + an `/mcp` endpoint, same app).
+The `[mcp]` extra adds a second command, `wallet-helper-mcp`, serving the HTTP API and an `/mcp` endpoint from the same app.
 
 ## Quick start
 
@@ -104,19 +103,20 @@ Inspect or drop a function's cache, like `functools.lru_cache`:
 
 ```python
 transcribe.cache_info()
-# {'entries': 1, 'hits': 1, 'lifetime_hits': 1, 'lifetime_misses': 0}
+# {'entries': 1, 'hits': 1, 'lifetime_hits': 1, 'lifetime_misses': 1}
 transcribe.cache_clear()  # forget this function's stored results
 ```
 
-`entries` and `hits` describe what exists **now**; the lifetime tallies describe
-everything the store has **ever** done. The difference is not pedantry: `hits`
-is stored inside each record, so evicting or expiring an entry destroys the
-record of every call it ever saved. On a store with five entries and a hundred
-reuses each, `evict(max_entries=2)` took the reported total from 500 to 200 —
-sixty per cent of the saved calls, gone, with nothing raised. Since eviction
-and TTL are this package's own features, a long-running cache under-reported
-its own value, and did so *more* the better it was housekeeping.
-`lifetime_hits` survives both.
+Two calls, one of them served from the store: one entry, one hit, and one miss —
+the first call, which had to run. `entries` and `hits` describe what exists
+**now**; the lifetime tallies describe everything the store has **ever** done.
+The difference is not pedantry: `hits` is stored inside each record, so evicting
+or expiring an entry destroys the record of every call it ever saved. On a store
+with five entries and a hundred reuses each, `evict(max_entries=2)` took the
+reported total from 500 to 200 — sixty per cent of the saved calls, gone, with
+nothing raised. Since eviction and TTL are this package's own features, a
+long-running cache under-reported its own value, and did so *more* the better it
+was housekeeping. `lifetime_hits` survives both.
 
 `lifetime_misses` is what makes the number mean something. A hit count alone
 cannot say whether a cache is earning its keep — 500 hits is excellent against
@@ -182,13 +182,28 @@ wallet-helper is part of the AI Helpers suite and builds on [os-helper](https://
 ## Tests
 
 ```bash
-make install   # editable install with dev, cli, and api extras
+make install   # editable install with the dev and api extras
 make lint      # ruff (PEP 8 and import order)
 make test      # pytest and doctests
 make           # lint then test
 ```
 
-CI runs the full test suite on a Python 3.10 to 3.13 matrix on Linux (🐧), plus the newest Python on macOS (🍎). On top of that, a separate lightweight **install smoke test** runs on all three platforms you might install on (🐧 Linux, 🍎 macOS, 🪟 Windows): it installs the package and its extras, then checks that it imports, that both command-line tools respond, and that a memoize round-trip runs the work exactly once. So installation is verified everywhere, while the exhaustive suite runs where it is fast and reliable (the cross-process test leans on `spawn`-based multiprocessing, which is minutes-slow on Windows runners).
+CI is deliberately a light gate: the exhaustive multi-version sweep belongs on a
+contributor's machine before the push. Four jobs run.
+
+- **lint** — `ruff check .` and `ruff format --check .`, with ruff pinned to a
+  known version so a new default rule cannot turn the gate red by surprise.
+- **test** — the whole suite with the `[dev,api]` extras, on one Python (3.12)
+  on Linux. The cross-process test leans on `spawn`-based multiprocessing, which
+  is minutes-slow on a Windows runner, so it is not paid for on every push.
+- **smoke** — the install procedure itself, on all three platforms you might
+  install on (🐧 Linux, 🍎 macOS, 🪟 Windows). It installs the package plus the
+  `[api]` extra, then proves it works: the package imports, `wallet-helper`
+  answers `--version` and `--help`, and a memoize round-trip runs the work
+  exactly once. This is what "verified on Windows too" means here.
+- **floor** — `pip install .` then `import wallet_helper` on Python 3.10, so the
+  `requires-python = ">=3.10"` promise has evidence behind it instead of being
+  a claim nobody ever ran.
 
 ## The Promise
 

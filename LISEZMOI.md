@@ -31,14 +31,14 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 
 ## État
 
-Éprouvé en production : 113 tests, une matrice de CI (intégration continue) au vert sur Python 3.10 à 3.13 sous Linux et macOS, plus un test d'installation sous Windows, et des versions publiées sur PyPI selon le versionnage sémantique (voir les badges ci-dessus). Ce qui est livré aujourd'hui :
+Éprouvé en production : 122 tests, une barrière de CI (intégration continue) au vert sur quatre jobs puis des versions publiées sur PyPI selon le versionnage sémantique (voir les badges ci-dessus). Ce qui est livré aujourd'hui :
 
 - **bibliothèque** avec `Wallet` et le décorateur `@memoize` (synchrone et `async def`), sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé) ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
 - **single-flight entre processus** via le backend SQLite ou le serveur, avec un jeton de fencing (une valeur aléatoire et unique attribuée à chaque bail ; un nouveau leader qui reprend un bail périmé en reçoit une nouvelle, si bien qu'une écriture tardive portant l'ancienne valeur ne correspond plus et se voit rejetée) pour que le travail s'exécute une seule fois même si un leader plante, un délai de bail et un heartbeat pour les jobs longs.
 - **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, une politique `evict` par âge ou taille et un plafond automatique (`max_entries`).
-- **`wallet-helper`** : inspecter, vider et purger le stockage.
+- **`wallet-helper`** : une seule commande, avec `stats`, `path`, `clear` et `evict`, pour inspecter et purger le stockage.
 - **serveur HTTP de déduplication** (l'extra `[api]`) plus `RemoteLedger`, pour que plusieurs clients sur n'importe quelle machine partagent un point de déduplication.
-- **outils MCP** (l'extra `[mcp]`) : le même serveur HTTP de déduplication exposé comme outils MCP pour tout hôte agentique compatible.
+- **outils MCP** (l'extra `[mcp]`) : le même serveur HTTP de déduplication exposé comme outils MCP pour tout hôte agentique compatible, servi par une seconde commande, `wallet-helper-mcp`.
 
 ## Installation
 
@@ -62,16 +62,16 @@ cd wallet-helper
 pip install -e .
 ```
 
-Les surfaces ligne de commande et HTTP sont des extras optionnels :
+La commande `wallet-helper` arrive avec l'installation de base. Les surfaces HTTP sont des extras optionnels :
 
 ```bash
 pip install "wallet-helper[api]"   # serveur HTTP de dédup -> fastapi, uvicorn
 pip install "wallet-helper[mcp]"   # outils MCP + ce qui précède -> fastapi-mcp
 ```
 
-Lancez le serveur MCP avec `wallet-helper-mcp` (API HTTP + un endpoint `/mcp`, même app).
+L'extra `[mcp]` ajoute une seconde commande, `wallet-helper-mcp`, qui sert l'API HTTP et un endpoint `/mcp` depuis la même app.
 
-## Prise en main
+## Prise en main rapide
 
 Mémoïsez n'importe quelle fonction en une ligne. Le résultat est stocké sur disque et réutilisé au prochain appel identique, cette exécution ou la semaine prochaine :
 
@@ -107,17 +107,19 @@ Inspectez ou videz le cache d'une fonction, comme `functools.lru_cache` :
 
 ```python
 transcribe.cache_info()
-# {'entries': 1, 'hits': 1, 'lifetime_hits': 1, 'lifetime_misses': 0}
+# {'entries': 1, 'hits': 1, 'lifetime_hits': 1, 'lifetime_misses': 1}
 transcribe.cache_clear()  # oublier les résultats stockés de cette fonction
 ```
 
-`entries` puis `hits` décrivent ce qui existe **maintenant** ; les compteurs à
-vie décrivent tout ce que le magasin a **jamais** fait. La distinction n'est pas
-de la pédanterie : `hits` est stocké *dans* chaque enregistrement, donc évincer
-ou expirer une entrée détruit la trace de chaque appel qu'elle a économisé. Sur
-un magasin de cinq entrées réutilisées cent fois chacune, `evict(max_entries=2)`
-a fait passer le total rapporté de 500 à 200 — soixante pour cent des appels
-économisés, disparus, sans que rien ne lève. L'éviction puis le TTL étant des
+Deux appels dont un servi depuis le stockage : une entrée, une touche puis un
+raté — le premier appel, qui a bien dû s'exécuter. `entries` puis `hits`
+décrivent ce qui existe **maintenant** ; les compteurs à vie décrivent tout ce
+que le magasin a **jamais** fait. La distinction n'est pas de la pédanterie :
+`hits` est stocké *dans* chaque enregistrement, donc évincer ou expirer une
+entrée détruit la trace de chaque appel qu'elle a économisé. Sur un magasin de
+cinq entrées réutilisées cent fois chacune, `evict(max_entries=2)` a fait passer
+le total rapporté de 500 à 200 — soixante pour cent des appels économisés,
+disparus, sans que rien ne lève. L'éviction puis le TTL étant des
 fonctionnalités de ce paquet, un cache de longue durée sous-estimait sa propre
 valeur — d'autant plus qu'il faisait bien son ménage. `lifetime_hits` survit
 aux deux.
@@ -130,7 +132,6 @@ appels puis médiocre sur 50 000 :
 info = transcribe.cache_info()
 taux = info["lifetime_hits"] / (info["lifetime_hits"] + info["lifetime_misses"])
 ```
-
 
 Fixez une fenêtre de fraîcheur avec `ttl` (secondes) et partagez un stockage sur tout un parc en pointant vers un serveur :
 
@@ -159,7 +160,7 @@ async def fetch(url):
     return await http_get(url)
 ```
 
-Deux outils en ligne de commande inspectent et gèrent le stockage (par défaut `$WALLET_HELPER_DIR`, puis `~/.cache/wallet-helper`) :
+La commande `wallet-helper` inspecte et gère le stockage (par défaut `$WALLET_HELPER_DIR`, puis `~/.cache/wallet-helper`) :
 
 ```bash
 wallet-helper stats   # combien de résultats en cache et combien d'appels évités
@@ -167,7 +168,7 @@ wallet-helper path    # où vit le stockage
 wallet-helper clear   # vider le stockage
 ```
 
-Pour un stockage partagé et le single-flight entre processus, utilisez le backend SQLite ou le serveur HTTP. Voir [EXAMPLES.md](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXAMPLES.md).
+Pour un stockage partagé et le single-flight entre processus, utilisez le backend SQLite ou le serveur HTTP. Voir [EXEMPLES.md](https://github.com/warith-harchaoui/wallet-helper/blob/main/EXEMPLES.md).
 
 ## Construit sur os-helper
 
@@ -187,13 +188,32 @@ wallet-helper fait partie de la suite AI Helpers et s'appuie sur [os-helper](htt
 ## Tests
 
 ```bash
-make install   # installation éditable avec les extras dev, cli et api
+make install   # installation éditable avec les extras dev et api
 make lint      # ruff (PEP 8 et ordre des imports)
 make test      # pytest et doctests
 make           # lint puis test
 ```
 
-La CI exécute toute la suite de tests sur une matrice Python 3.10 à 3.13 sous Linux (🐧), plus la version la plus récente sous macOS (🍎). En complément, un **test de fumée d'installation** léger tourne sur les trois plateformes où vous pourriez installer (🐧 Linux, 🍎 macOS, 🪟 Windows) : il installe le paquet et ses extras, puis vérifie qu'il s'importe, que les deux outils en ligne de commande répondent et qu'un aller-retour de mémoïsation n'exécute le travail qu'une seule fois. L'installation est donc vérifiée partout, tandis que la suite exhaustive tourne là où elle est rapide et fiable (le test entre processus s'appuie sur le multiprocessing par `spawn`, très lent sur les runners Windows).
+La CI est volontairement une barrière légère : le balayage exhaustif de toutes
+les versions de Python a sa place sur la machine d'un contributeur, avant le
+push. Quatre jobs tournent.
+
+- **lint** — `ruff check .` puis `ruff format --check .`, avec un ruff épinglé à
+  une version connue, pour qu'une nouvelle règle par défaut ne fasse pas passer
+  la barrière au rouge par surprise.
+- **test** — toute la suite avec les extras `[dev,api]`, sur un seul Python
+  (3.12) sous Linux. Le test entre processus s'appuie sur le multiprocessing par
+  `spawn`, très lent sur un runner Windows : on ne le paie donc pas à chaque
+  push.
+- **smoke** — la procédure d'installation elle-même, sur les trois plateformes
+  où vous pourriez installer (🐧 Linux, 🍎 macOS, 🪟 Windows). Elle installe le
+  paquet plus l'extra `[api]`, puis prouve que ça marche : le paquet s'importe,
+  `wallet-helper` répond à `--version` et `--help` et un aller-retour de
+  mémoïsation n'exécute le travail qu'une seule fois. Voilà ce que « vérifié
+  sous Windows aussi » veut dire ici.
+- **floor** — `pip install .` puis `import wallet_helper` sous Python 3.10, pour
+  que la promesse `requires-python = ">=3.10"` repose sur une preuve au lieu
+  d'être une affirmation que personne n'a jamais exécutée.
 
 ## La promesse
 
@@ -205,8 +225,8 @@ cas par cas :
 1. **Garanti local.** Le `Ledger` par défaut (un dossier de fichiers JSON) et le
    `SqliteLedger` (un seul fichier) vivent sous `$WALLET_HELPER_DIR`, ou
    `~/.cache/wallet-helper`, sur votre machine. Rien n'est envoyé, aucune
-   télémétrie, aucun compte. Vos résultats mis en cache, et les entrées qui les
-   indexent, ne quittent jamais le disque.
+   télémétrie, aucun compte. Vos résultats mis en cache — comme les entrées qui
+   les indexent — ne quittent jamais le disque.
 
 2. **Là où le local n'est pas possible : la réserve.** wallet-helper existe pour
    *éviter* de relancer votre appel coûteux ; il ne fait aucune requête réseau
