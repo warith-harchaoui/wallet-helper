@@ -36,6 +36,10 @@ Battle-tested: 122 tests, a green CI gate across four jobs, and semantic-version
 - **HTTP dedup server** (the `[api]` extra) plus `RemoteLedger`, so many clients on any host share one dedup point.
 - **MCP tools** (the `[mcp]` extra): the same HTTP dedup server exposed as MCP tools for any MCP-aware agent host, served by a second command, `wallet-helper-mcp`.
 
+## How it works
+
+![How wallet-helper works: the same expensive call, charged once](https://raw.githubusercontent.com/warith-harchaoui/wallet-helper/main/assets/diagrams/how-it-works.png)
+
 ## Installation
 
 The only requirement is **Python 3.10 to 3.13**. If you need Python itself:

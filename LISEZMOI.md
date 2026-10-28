@@ -40,6 +40,10 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 - **serveur HTTP de déduplication** (l'extra `[api]`) plus `RemoteLedger`, pour que plusieurs clients sur n'importe quelle machine partagent un point de déduplication.
 - **outils MCP** (l'extra `[mcp]`) : le même serveur HTTP de déduplication exposé comme outils MCP pour tout hôte agentique compatible, servi par une seconde commande, `wallet-helper-mcp`.
 
+## Comment ça marche
+
+![Comment wallet-helper fonctionne : le même appel coûteux, facturé une seule fois](https://raw.githubusercontent.com/warith-harchaoui/wallet-helper/main/assets/diagrams/comment-ca-marche.png)
+
 ## Installation
 
 Le seul prérequis est **Python 3.10 à 3.13**. Pour installer Python :
