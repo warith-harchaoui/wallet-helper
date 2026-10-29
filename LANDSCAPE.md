@@ -224,3 +224,15 @@ move and this file does not move with them.
 The wallet-helper row is the exception: it is read off this repository's own
 code and test suite at the version in `pyproject.toml`, so it is the only row
 that is checked mechanically rather than by reading.
+
+## Ideas worth stealing
+
+Researched rather than guessed: what each neighbour does better, and what this library would have to change to match it. Nothing here is a commitment — it is the reading list the next version starts from.
+
+- **`dogpile.cache` and Go's `singleflight` — one in-flight call per key** — Without stampede protection, a cold key hit by ten callers at once runs the expensive thing ten times. The table already names `singleflight`; collapsing concurrent misses onto one computation is the single highest-value behaviour a cache of expensive calls can have.
+
+- **`joblib.Memory` — hashing that understands large arrays** — Content-addressing is this library's premise, and the hard case is a numpy array or a tensor argument, where a naive repr is either wrong or ruinously slow. joblib solved exactly this.
+
+- **`cachetools` — TTL as a first-class policy** — An expensive call whose answer goes stale needs a time-to-live, not just an eviction bound. `TTLCache` is the reference shape.
+
+- **Stripe's idempotency keys — define what a replay returns, and for how long** — The strongest idea in the table's right-hand column: a key is valid for a stated window, a replay within it returns the original outcome including the original error, and after it the key is free. Caching a *failure* deliberately is the part most libraries leave undefined.

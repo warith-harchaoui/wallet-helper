@@ -236,3 +236,15 @@ projets bougent et ce fichier ne bouge pas avec eux.
 La ligne wallet-helper est l'exception : elle est relevée sur le code puis la
 suite de tests de ce dépôt, à la version inscrite dans `pyproject.toml`. C'est
 donc la seule ligne vérifiée mécaniquement plutôt qu'à la lecture.
+
+## Idées à reprendre
+
+Étudié plutôt que deviné : ce que chaque voisin fait mieux, puis ce que cette bibliothèque devrait changer pour l'égaler. Rien ici n'est un engagement : c'est la liste de lecture dont part la version suivante.
+
+- **`dogpile.cache` puis le `singleflight` de Go — un seul appel en vol par clé** — Sans protection contre la ruée, une clé froide frappée par dix appelants à la fois exécute dix fois la chose coûteuse. Le tableau nomme déjà `singleflight` ; replier les défauts de cache concurrents sur un seul calcul est le comportement le plus précieux qu'un cache d'appels coûteux puisse avoir.
+
+- **`joblib.Memory` — un hachage qui comprend les grands tableaux** — L'adressage par contenu est la prémisse de cette bibliothèque, puis le cas difficile est un tableau numpy ou un tenseur en argument, où une représentation naïve est soit fausse soit ruineusement lente. joblib a résolu exactement cela.
+
+- **`cachetools` — la durée de vie comme politique de premier rang** — Un appel coûteux dont la réponse se périme réclame une durée de vie, pas seulement une borne d'éviction. `TTLCache` en est la forme de référence.
+
+- **Les clés d'idempotence de Stripe — définir ce que rend un rejeu, puis pendant combien de temps** — L'idée la plus forte de la colonne de droite du tableau : une clé vaut pour une fenêtre annoncée, un rejeu dans cette fenêtre rend le résultat d'origine y compris l'erreur d'origine, puis après elle la clé est libre. Mettre en cache un *échec* délibérément est la part que la plupart des bibliothèques laissent indéfinie.
