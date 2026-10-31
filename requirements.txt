@@ -5,7 +5,8 @@
 # direct dependency, but it pulls a few transitive libraries of its own (requests,
 # pyyaml, tqdm, validators, python-dotenv). wallet-helper is local-first and needs
 # no separate service, but it is not dependency-free.
-os-helper>=1.7,<5
+os-helper>=2.0.0,<5
+click>=8.1,<9        # the CLI is click-built and not optional since the argparse door was dropped
 
 # Optional surfaces live behind extras in pyproject.toml (install as needed):
 #   pip install "wallet-helper[cli]"   # click CLI variant  -> click
