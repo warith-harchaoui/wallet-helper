@@ -28,7 +28,7 @@ classifiers = [
 # One dependency: os-helper, the shared utility layer of the AI Helpers suite
 # (content-addressed hashing, temp folders, path helpers, logging).
 dependencies = [
-    "os-helper>=2.0.0,<4",
+    "os-helper>=2.0.0,<5",
     # click: the CLI is built with it and is the only command line this
     # package has, so the dependency cannot be optional either. It used to
     # sit in the [cli] extra beside an always-available argparse CLI.
