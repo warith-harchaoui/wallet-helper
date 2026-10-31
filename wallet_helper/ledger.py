@@ -269,7 +269,17 @@ def _canonical(value: Any, seen: dict[int, int] | None = None) -> Any:
         return _BYTES_MARK + osh.hash_string(bytes(value).decode("latin-1"))
     path = _file_path(value)
     if path is not None:
-        return _FILE_MARK + osh.hashfile(path)
+        try:
+            return _FILE_MARK + osh.hashfile(path)
+        except OSError:
+            # `_file_path` saw the file, then `hashfile` read it: two syscalls,
+            # so the file can be reaped in between. os-helper 4.0.0 raises on
+            # that gap where 3.x quietly answered a *path* digest, and this
+            # function's contract is that key construction never crashes
+            # before the wrapped call even runs. Falling through keys the
+            # unreadable path as ordinary text, which is the honest answer:
+            # no bytes were read, so no content digest may be claimed for them.
+            pass
     if isinstance(value, str):
         # Keep user data and synthesised markers in disjoint spaces.
         return _ESC + value if value.startswith(_MARKS) else value

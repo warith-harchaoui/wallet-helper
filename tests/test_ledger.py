@@ -494,3 +494,30 @@ def test_a_corrupt_tally_never_breaks_a_cache_operation(ledger: Ledger) -> None:
     ledger.register_hit(key)  # must not raise
     assert ledger.get(key) == {"v": 1}
     assert ledger.stats()["entries"] == 1
+
+
+def test_key_survives_a_file_vanishing_mid_walk(tmp_path: Path, monkeypatch) -> None:
+    """Key construction must not crash when a file disappears under it.
+
+    ``_file_path`` checks the file exists, then ``osh.hashfile`` reads it: two
+    syscalls, so a file deleted in between is a real sequence, not a contrived
+    one (a temp file reaped by another process, a cache swept mid-call). Under
+    os-helper 3.x that gap was invisible — ``hashfile`` answered a *path*
+    digest for the missing file. Since os-helper 4.0.0 it raises
+    ``FileNotFoundError``, which would escape straight out of a key builder
+    whose own contract says "key construction must never crash before the
+    wrapped call even runs".
+    """
+    import wallet_helper.ledger as ledger_module
+
+    f = tmp_path / "reaped.bin"
+    f.write_bytes(b"payload")
+
+    def _vanished(path: str, *a, **k) -> str:
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(ledger_module.osh, "hashfile", _vanished)
+
+    # Must not raise, and must stay deterministic for the same path.
+    key = make_key("ns", {"p": str(f)})
+    assert key == make_key("ns", {"p": str(f)})
