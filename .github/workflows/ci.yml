@@ -23,6 +23,11 @@ on:
     branches: [main, master]
   pull_request:
 
+# A burst of pushes to the same branch should cost one run, not one per commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
