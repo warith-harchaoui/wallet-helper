@@ -6,6 +6,29 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-31
+
+### Fixed
+
+- **The published metadata capped `os-helper<4`, so nobody installing from
+  the index could reach 4.0.0.** The ceiling was raised in the repository on
+  2026-10-31, but a wheel's `Requires-Dist` is frozen at upload: until this
+  release the raised ceiling reached no installer at all, and a fresh resolve
+  still pulled os-helper 3.1.0. This release is what carries the `<5` to the
+  index. `ledger.py` keys a file argument by its content hash, and now
+  catches the `OSError` os-helper 4.0.0 raises when the file is reaped
+  between the existence check and the read — this package's own contract
+  is that key construction never crashes before the wrapped call runs.
+
+- **`requirements.txt` and the package metadata disagreed, and nothing
+  compared them.** `click` was absent from `requirements.txt` although the command line
+  has been core since the argparse door was dropped, so
+  `pip install -r requirements.txt` built an environment whose CLI could
+  not start; the `os-helper` floor there read `>=1.7` against the `>=2.0.0`
+  the package demands.
+  `tests/test_requirements_mirror_pyproject.py` now holds the two lists
+  equal, and was checked red before it was committed.
+
 ### Documentation
 
 - **The six documents are on the suite spine** (CODING.md rules 16-18). In
