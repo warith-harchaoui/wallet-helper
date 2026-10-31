@@ -34,7 +34,12 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 Éprouvé en production : 122 tests, une barrière de CI (intégration continue) au vert sur quatre jobs puis des versions publiées sur PyPI selon le versionnage sémantique (voir les badges ci-dessus). Ce qui est livré aujourd'hui :
 
 - **bibliothèque** avec `Wallet` et le décorateur `@memoize` (synchrone et `async def`), sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé) ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
-- **single-flight entre processus** via le backend SQLite ou le serveur, avec un jeton de fencing (une valeur aléatoire et unique attribuée à chaque bail ; un nouveau leader qui reprend un bail périmé en reçoit une nouvelle, si bien qu'une écriture tardive portant l'ancienne valeur ne correspond plus et se voit rejetée) pour que le travail s'exécute une seule fois même si un leader plante, un délai de bail et un heartbeat pour les jobs longs.
+- **single-flight entre processus** via le backend SQLite ou le serveur. Trois mécanismes garantissent une seule exécution entre machines :
+  - un **jeton de fencing** — une valeur aléatoire puis unique attribuée à chaque bail. Un nouveau leader qui reprend un bail périmé en reçoit une nouvelle, si bien qu'une écriture tardive portant l'ancienne ne correspond plus puis se voit rejetée ;
+  - un **délai de bail**, pour qu'un leader mort ne bloque jamais les attendants ;
+  - un **heartbeat**, pour qu'un travail long garde son bail.
+
+  Les doublons se fondent tant que le leader finit dans son bail ou maintient son heartbeat.
 - **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, une politique `evict` par âge ou taille et un plafond automatique (`max_entries`).
 - **`wallet-helper`** : une seule commande, avec `stats`, `path`, `clear` et `evict`, pour inspecter et purger le stockage.
 - **serveur HTTP de déduplication** (l'extra `[api]`) plus `RemoteLedger`, pour que plusieurs clients sur n'importe quelle machine partagent un point de déduplication.

@@ -30,7 +30,12 @@ It is content-addressed, so a renamed input file still hits and two different in
 Battle-tested: 122 tests, a green CI gate across four jobs, and semantic-versioned releases on PyPI (see the badges above). What ships today:
 
 - **library** with `Wallet` and the `@memoize` decorator (sync and `async def`), over a `Ledger` (JSON files), a `SqliteLedger` (one shared file), or a `RemoteLedger` (an HTTP server). In-process single-flight is built in.
-- **cross-process single-flight** through the SQLite backend or the server, with a fencing token (a random, unique value handed out with each lease; a new leader taking over a stale lease gets a fresh one, so a late write carrying the old value no longer matches and is rejected) so a crashed or stalled leader cannot disrupt a new leader's lease, a lease timeout so a dead leader never blocks waiters, and a heartbeat so a long job keeps its lease. Duplicates coalesce as long as the leader finishes within its lease or keeps a heartbeat.
+- **cross-process single-flight** through the SQLite backend or the server. Three mechanisms keep one execution honest across machines:
+  - a **fencing token** — a random, unique value handed out with each lease. A new leader taking over a stale lease gets a fresh one, so a late write carrying the old value no longer matches and is rejected, and a crashed or stalled leader cannot disrupt the new leader's lease;
+  - a **lease timeout**, so a dead leader never blocks waiters;
+  - a **heartbeat**, so a long job keeps its lease.
+
+  Duplicates coalesce as long as the leader finishes within its lease or keeps a heartbeat.
 - **time-to-live and eviction**: per-entry `ttl`, optional stale-while-revalidate, an `evict` policy by age or size, and an automatic size cap (`max_entries`).
 - **`wallet-helper`**: one command, with `stats`, `path`, `clear`, and `evict`, to inspect and prune the store.
 - **HTTP dedup server** (the `[api]` extra) plus `RemoteLedger`, so many clients on any host share one dedup point.
