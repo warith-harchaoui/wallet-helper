@@ -115,18 +115,13 @@ transcribe.cache_info()
 transcribe.cache_clear()  # oublier les résultats stockés de cette fonction
 ```
 
-Deux appels dont un servi depuis le stockage : une entrée, une touche puis un
-raté — le premier appel, qui a bien dû s'exécuter. `entries` puis `hits`
-décrivent ce qui existe **maintenant** ; les compteurs à vie décrivent tout ce
-que le magasin a **jamais** fait. La distinction n'est pas de la pédanterie :
-`hits` est stocké *dans* chaque enregistrement, donc évincer ou expirer une
-entrée détruit la trace de chaque appel qu'elle a économisé. Sur un magasin de
-cinq entrées réutilisées cent fois chacune, `evict(max_entries=2)` a fait passer
-le total rapporté de 500 à 200 — soixante pour cent des appels économisés,
-disparus, sans que rien ne lève. L'éviction puis le TTL étant des
-fonctionnalités de ce paquet, un cache de longue durée sous-estimait sa propre
-valeur — d'autant plus qu'il faisait bien son ménage. `lifetime_hits` survit
-aux deux.
+Deux appels dont un servi depuis le stockage : une entrée, une touche puis un raté — le premier appel, qui a bien dû s'exécuter.
+
+`entries` puis `hits` décrivent ce qui existe **maintenant**. Les compteurs à vie décrivent tout ce que le magasin a **jamais** fait.
+
+La distinction n'est pas de la pédanterie. `hits` est stocké *dans* chaque enregistrement, donc évincer ou expirer une entrée détruit la trace de chaque appel qu'elle a économisé. Sur un magasin de cinq entrées réutilisées cent fois chacune, `evict(max_entries=2)` a fait passer le total rapporté de 500 à 200 — soixante pour cent des appels économisés, disparus, sans que rien ne lève.
+
+L'éviction puis le TTL étant des fonctionnalités de ce paquet, un cache de longue durée sous-estimait sa propre valeur — d'autant plus qu'il faisait bien son ménage. `lifetime_hits` survit aux deux.
 
 `lifetime_misses` est ce qui donne un sens au nombre. Un compte de touches seul
 ne dit pas si un cache est rentable — 500 touches, c'est excellent sur 520
