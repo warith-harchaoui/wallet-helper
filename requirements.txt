@@ -9,7 +9,12 @@ os-helper>=2.0.0,<5
 click>=8.1,<9        # the CLI is click-built and not optional since the argparse door was dropped
 
 # Optional surfaces live behind extras in pyproject.toml (install as needed):
-#   pip install "wallet-helper[cli]"   # click CLI variant  -> click
 #   pip install "wallet-helper[api]"   # HTTP dedup server   -> fastapi, uvicorn
+#   pip install "wallet-helper[mcp]"   # MCP tools + the above -> fastapi-mcp
+#
+# There is no `[cli]`. It was dropped when the argparse door was, because click
+# became a base dependency -- which the line above says, four lines up, in the
+# same file this advertised the extra in. A reader who followed the
+# advertisement got a warning and exit 0, so nothing told them.
 #
 # Dev/test tools (pytest, ruff, httpx) live in requirements-dev.txt.

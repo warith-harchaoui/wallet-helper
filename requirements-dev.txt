@@ -1,7 +1,7 @@
 # Dev and test dependencies for wallet-helper.
 #
 # Derived from pyproject.toml's [dev] and [api] extras -- the single
-# source of truth CI actually installs from (`pip install -e ".[dev,cli,api]"`).
+# source of truth CI actually installs from (`pip install -e ".[dev,api]"`).
 # Kept only for contributors who prefer `pip install -r requirements-dev.txt`
 # -- edit the extras in pyproject.toml, not this file, to change what installs.
--e .[dev,cli,api]
+-e .[dev,api]
