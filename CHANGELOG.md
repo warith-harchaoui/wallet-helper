@@ -6,6 +6,55 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-11-01
+
+### Fixed
+
+- **A journal mode was a reason the ledger would not open.**
+  `SqliteLedger.__init__` ran `PRAGMA journal_mode=WAL` and let that one
+  statement speak for the whole constructor. Going into WAL needs exclusive
+  access to the database file, and SQLite answers a journal-mode change with
+  `SQLITE_BUSY` **without consulting the busy handler** — so the thirty-second
+  timeout `_connect` sets, the one whose own docstring says "the timeout makes
+  writers wait, not fail", is true of every other statement and false of that
+  one.
+
+  Three processes opening a cold ledger in the same instant is exactly that
+  case, and it is the case this library exists for: the cross-process
+  single-flight. The ledger meant to stop three processes from duplicating
+  work was the reason one of them crashed with
+  `sqlite3.OperationalError: database is locked`.
+
+  Found from the outside, in `sprezzature-accessibility`, by its test about
+  three callers sharing one model call — and measured there, because a flake
+  is only fixed if the rate moves: **3 failures in 15 runs before, 0 in 15
+  after**, same machine, same test, the only change being this one.
+
+  What `_enable_wal` does instead, in three steps:
+
+  1. **Read before writing.** `PRAGMA journal_mode` as a query takes no lock
+     and the mode is persistent in the file, so every process after the first
+     reads `wal` and never attempts the change. That removes the race from all
+     but the first arrival rather than surviving it.
+  2. **Retry, re-reading each time.** A loser of the race re-reads between
+     attempts: the winner may have set it meanwhile, and finding `wal` is
+     success, not a retry worth making. Four rungs, fixed rather than random
+     so a failure stays reproducible.
+  3. **Give up, and open anyway.** If the mode will not take, the ledger keeps
+     the default rollback journal and records it on `self.journal_mode`. Every
+     statement still works; concurrent readers merely serialise against a
+     writer. Refusing to open a cache over its journal mode is the worse
+     failure by a wide margin — and it was the failure that was happening.
+
+  `tests/test_the_journal_mode_cannot_refuse_the_ledger.py` covers all three
+  branches by **injecting** the busy error rather than racing for it. Three
+  shapes of real contention were tried first and none reproduced it — three
+  simultaneous constructors, a writer holding `BEGIN EXCLUSIVE`, a reader
+  holding a shared lock — because the busy handler *does* apply to ordinary
+  lock waits. The window is narrower than a test can aim at, and a race test
+  that passes by luck is worth less than no test. `test_multiprocess.py` still
+  covers the real concurrency.
+
 ## [1.3.1] - 2026-10-31
 
 ### Fixed

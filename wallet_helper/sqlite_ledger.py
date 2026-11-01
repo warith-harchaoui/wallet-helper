@@ -75,8 +75,9 @@ class SqliteLedger:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._session() as conn:
             # WAL lets readers and one writer proceed at once, which is the point
-            # of choosing SQLite over one-file-per-entry for shared use.
-            conn.execute("PRAGMA journal_mode=WAL")
+            # of choosing SQLite over one-file-per-entry for shared use. It is an
+            # optimisation, though, not a requirement -- see `_enable_wal`.
+            self._enable_wal(conn)
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS entries ("
                 "  key TEXT PRIMARY KEY,"
@@ -103,6 +104,73 @@ class SqliteLedger:
                 "  owner TEXT NOT NULL DEFAULT ''"
                 ")"
             )
+
+    #: Backoff between attempts at the journal-mode change, in seconds. Fixed
+    #: rather than random so a failure is reproducible: the whole point of this
+    #: ladder is a race, and a race debugged against a random schedule is
+    #: debugged twice.
+    _WAL_BACKOFF: tuple[float, ...] = (0.02, 0.05, 0.12, 0.3)
+
+    def _enable_wal(self, conn: sqlite3.Connection) -> str:
+        """Put the database in WAL mode, without making the ledger depend on it.
+
+        Returns the journal mode actually in force.
+
+        The defect this exists for
+        --------------------------
+        Going into WAL needs exclusive access to the database file, and SQLite
+        answers a journal-mode change with ``SQLITE_BUSY`` **without consulting
+        the busy handler**. So the 30-second timeout that :meth:`_connect` sets
+        -- the one whose docstring says "the timeout makes writers wait, not
+        fail" -- is true of every other statement and false of this one.
+
+        Three processes opening a cold ledger in the same instant is exactly
+        that case, and it is the case this library exists to serve: the
+        cross-process single-flight. Measured in ``sprezzature-accessibility``,
+        whose test about three callers sharing one model call died with
+        ``sqlite3.OperationalError: database is locked`` on this very line in
+        roughly one run out of three. The ledger meant to stop three processes
+        from duplicating work was the reason one of them crashed.
+
+        What this does instead
+        ----------------------
+        **Read before writing.** ``PRAGMA journal_mode`` as a query costs
+        nothing and takes no lock, and the mode is persistent in the file --
+        so after the first process has set it, every later one reads ``wal``
+        and never attempts the change at all. That alone removes the race from
+        all but the first arrival.
+
+        **Then retry, re-reading each time.** A loser of the race re-reads the
+        mode between attempts, because the winner may have set it in the
+        meantime; finding ``wal`` is success, not a retry worth making.
+
+        **Then give up, and open anyway.** If the mode will not take, the
+        ledger keeps the default rollback journal. Every statement still works
+        and concurrent readers merely serialise against a writer. Refusing to
+        open a cache over the journal mode is the worse failure by a wide
+        margin -- it is the failure that was happening.
+        """
+        mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+        if mode == "wal":
+            return mode
+        for pause in self._WAL_BACKOFF:
+            try:
+                row = conn.execute("PRAGMA journal_mode=WAL").fetchone()
+            except sqlite3.OperationalError:
+                time.sleep(pause)
+                mode = str(conn.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+                if mode == "wal":
+                    return mode
+                continue
+            mode = str(row[0]).lower() if row else mode
+            if mode == "wal":
+                return mode
+            time.sleep(pause)
+        # Not WAL, and that is survivable. Recorded on the instance rather than
+        # raised or logged: a caller who cares can ask, and nothing about the
+        # ledger's contract changes.
+        self.journal_mode = mode
+        return mode
 
     @property
     def location(self) -> str:
