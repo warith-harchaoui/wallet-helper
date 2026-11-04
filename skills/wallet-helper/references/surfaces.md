@@ -23,7 +23,10 @@ Works on `def` and `async def`. In-process single-flight is built in.
 ### `Wallet` and the ledgers
 
 ```python
-w = Wallet(ledger=SqliteLedger("~/.cache/my-app/wallet.db"), max_entries=10_000)
+from pathlib import Path
+
+# The path is taken as given: write Path.home(), not "~", which is not expanded.
+w = Wallet(ledger=SqliteLedger(Path.home() / ".cache/my-app/wallet.db", max_entries=10_000))
 ```
 
 | Ledger | Store | Single-flight scope |
@@ -47,13 +50,13 @@ Logging and file management route through `os_helper` — the suite convention.
 
 ```bash
 pip install 'wallet-helper[api]'
-python -m wallet_helper.api         # 127.0.0.1:8000, OpenAPI docs at /docs
+uvicorn wallet_helper.api:app       # 127.0.0.1:8000, OpenAPI docs at /docs
 ```
 
 | Method | Route | Purpose |
 |---|---|---|
 | GET | `/health` | liveness |
-| GET | `/stats` | entry count and size |
+| GET | `/stats` | entries, hits, lifetime hits and misses |
 | POST | `/key` | compute a content-addressed key |
 | POST | `/claim` | take a lease on a key (become the leader) |
 | POST | `/submit` | write the result, with the fencing token |
@@ -70,7 +73,7 @@ can share one dedup point this way.
 
 ```bash
 pip install 'wallet-helper[mcp]'
-wallet-helper-mcp                   # same app, MCP mounted at /mcp
+wallet-helper-mcp                   # same app on 127.0.0.1:8012, MCP at /mcp
 ```
 
 `wallet_helper.mcp` takes the FastAPI app from `wallet_helper.api` and mounts
@@ -80,7 +83,7 @@ cannot drift and one process serves both doors.
 Register it with Claude Code:
 
 ```bash
-claude mcp add wallet-helper --transport http http://127.0.0.1:8000/mcp
+claude mcp add wallet-helper --transport http http://127.0.0.1:8012/mcp
 ```
 
 `clear` and `evict` are reachable as MCP tools: confirm before calling either

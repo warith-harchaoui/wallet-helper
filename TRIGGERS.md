@@ -27,9 +27,9 @@ caching (that is `functools.lru_cache`), general-purpose storage, or queueing.
 | Give up a lease | n/a | (internal) | `POST /release` |
 | Read a stored result | n/a | `Wallet.get` | `GET /result/{key}` |
 | Where is the store | `wallet-helper path` | `default_wallet` | n/a |
-| Entry count and size | `wallet-helper stats` | n/a | `GET /stats` |
+| Entry count and hits | `wallet-helper stats` | n/a | `GET /stats` |
 | Drop everything | `wallet-helper clear` | n/a | `POST /clear` |
-| Prune by age / size / count | `wallet-helper evict` | n/a | `POST /evict` |
+| Prune by age / count | `wallet-helper evict` | n/a | `POST /evict` |
 
 Every command is also reachable through the CLI (`wallet-helper …`,
 same flags), and the HTTP server doubles as the MCP surface at `/mcp`.

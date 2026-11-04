@@ -27,7 +27,7 @@ It is content-addressed, so a renamed input file still hits and two different in
 
 ## Status
 
-Battle-tested: 122 tests, a green CI gate across four jobs, and semantic-versioned releases on PyPI (see the badges above). What ships today:
+Battle-tested: 131 tests, a green CI gate across four jobs, and semantic-versioned releases on PyPI (see the badges above). What ships today:
 
 - **library** with `Wallet` and the `@memoize` decorator (sync and `async def`), over a `Ledger` (JSON files), a `SqliteLedger` (one shared file), or a `RemoteLedger` (an HTTP server). In-process single-flight is built in.
 - **cross-process single-flight** through the SQLite backend or the server. Three mechanisms keep one execution honest across machines:
@@ -36,7 +36,7 @@ Battle-tested: 122 tests, a green CI gate across four jobs, and semantic-version
   - a **heartbeat**, so a long job keeps its lease.
 
   Duplicates coalesce as long as the leader finishes within its lease or keeps a heartbeat.
-- **time-to-live and eviction**: per-entry `ttl`, optional stale-while-revalidate, an `evict` policy by age or size, and an automatic size cap (`max_entries`).
+- **time-to-live and eviction**: per-entry `ttl`, optional stale-while-revalidate, an `evict` policy by age or entry count, and an automatic size cap (`max_entries`).
 - **`wallet-helper`**: one command, with `stats`, `path`, `clear`, and `evict`, to inspect and prune the store.
 - **HTTP dedup server** (the `[api]` extra) plus `RemoteLedger`, so many clients on any host share one dedup point.
 - **MCP tools** (the `[mcp]` extra): the same HTTP dedup server exposed as MCP tools for any MCP-aware agent host, served by a second command, `wallet-helper-mcp`.

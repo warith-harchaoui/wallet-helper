@@ -31,7 +31,7 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 
 ## État
 
-Éprouvé en production : 122 tests, une barrière de CI (intégration continue) au vert sur quatre jobs puis des versions publiées sur PyPI selon le versionnage sémantique (voir les badges ci-dessus). Ce qui est livré aujourd'hui :
+Éprouvé en production : 131 tests, une barrière de CI (intégration continue) au vert sur quatre jobs puis des versions publiées sur PyPI selon le versionnage sémantique (voir les badges ci-dessus). Ce qui est livré aujourd'hui :
 
 - **bibliothèque** avec `Wallet` et le décorateur `@memoize` (synchrone et `async def`), sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé) ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
 - **single-flight entre processus** via le backend SQLite ou le serveur. Trois mécanismes garantissent une seule exécution entre machines :
@@ -40,7 +40,7 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
   - un **heartbeat**, pour qu'un travail long garde son bail.
 
   Les doublons se fondent tant que le leader finit dans son bail ou maintient son heartbeat.
-- **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, une politique `evict` par âge ou taille et un plafond automatique (`max_entries`).
+- **durée de vie et éviction** : `ttl` par entrée, stale-while-revalidate optionnel, une politique `evict` par âge ou nombre d'entrées et un plafond automatique (`max_entries`).
 - **`wallet-helper`** : une seule commande, avec `stats`, `path`, `clear` et `evict`, pour inspecter et purger le stockage.
 - **serveur HTTP de déduplication** (l'extra `[api]`) plus `RemoteLedger`, pour que plusieurs clients sur n'importe quelle machine partagent un point de déduplication.
 - **outils MCP** (l'extra `[mcp]`) : le même serveur HTTP de déduplication exposé comme outils MCP pour tout hôte agentique compatible, servi par une seconde commande, `wallet-helper-mcp`.

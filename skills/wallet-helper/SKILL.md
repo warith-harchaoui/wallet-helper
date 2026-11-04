@@ -42,14 +42,14 @@ inputs never collide.
 ## Before anything: verify it is installed
 
 ```bash
-wallet-helper stats               # argparse CLI; also proves the store is reachable
+wallet-helper stats               # click CLI; also proves the store is reachable
 python -c "import wallet_helper"  # library import check
 ```
 
 Install:
 
 ```bash
-pip install wallet-helper                  # core: library + argparse CLI
+pip install wallet-helper                  # core: library + click CLI
 pip install 'wallet-helper[api]'           # + the HTTP dedup server
 pip install 'wallet-helper[mcp]'           # + MCP tools over the same app
 ```
@@ -57,6 +57,8 @@ pip install 'wallet-helper[mcp]'           # + MCP tools over the same app
 ## The library is the main surface
 
 ```python
+from pathlib import Path
+
 from wallet_helper import memoize, Wallet, SqliteLedger
 
 
@@ -64,7 +66,7 @@ from wallet_helper import memoize, Wallet, SqliteLedger
 def transcribe(path: str) -> str: ...  # runs once per distinct file content
 
 
-w = Wallet(ledger=SqliteLedger("~/.cache/my-app/wallet.db"))
+w = Wallet(ledger=SqliteLedger(Path.home() / ".cache/my-app/wallet.db"))
 ```
 
 `@memoize` works on `def` and on `async def`. In-process single-flight is
@@ -84,7 +86,7 @@ Pick the backend from the sharing you need:
 | Intent | Command |
 |---|---|
 | Where does the store live | `wallet-helper path` |
-| How many entries, how big | `wallet-helper stats` |
+| How many entries, how many hits | `wallet-helper stats` |
 | Drop everything | `wallet-helper clear` |
 | Prune by age or size | `wallet-helper evict` |
 

@@ -61,3 +61,13 @@ def test_library_exception_prints_clean_error_not_a_traceback(
     rc = main(["--sqlite", str(tmp_path / "ledger.db"), "stats"])
     assert rc == 1
     assert "Error: db is locked" in capsys.readouterr().err
+
+
+def test_evict_max_entries_keeps_the_newest(tmp_path: Path, capsys) -> None:
+    """``evict --max-entries N`` reports what it removed and leaves N behind."""
+    lg = Ledger(tmp_path)
+    for i in range(3):
+        lg.put(make_key("demo", {"x": i}), {"i": i})
+    assert main(["--dir", str(tmp_path), "evict", "--max-entries", "1"]) == 0
+    assert f"evicted 2 entries from {tmp_path}" in capsys.readouterr().out
+    assert lg.stats()["entries"] == 1

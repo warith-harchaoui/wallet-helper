@@ -6,10 +6,15 @@ over four commands.
 The CLI's job is **inspecting and pruning** the store. Memoization itself
 happens in the library.
 
+Two group options choose the store, and go **before** the subcommand:
+`--dir PATH` for a JSON ledger directory (default: `$WALLET_HELPER_DIR`, else
+`~/.cache/wallet-helper`), or `--sqlite FILE` for a SQLite ledger. `-V`
+prints the version.
+
 ## `path` — where the store lives
 
 ```bash
-wallet-helper path [--store PATH]
+wallet-helper [--dir PATH | --sqlite FILE] path
 ```
 
 Prints the resolved store location. Run it before anything destructive, so
@@ -18,33 +23,34 @@ you and the user are talking about the same directory.
 ## `stats` — what is in it
 
 ```bash
-wallet-helper stats [--store PATH] [--json]
+wallet-helper [--dir PATH | --sqlite FILE] stats
 ```
 
-Entry count, total size on disk, and age distribution. This is the call that
+The ledger's location, its entry count and the calls saved (cache hits). This is the call that
 answers "is the cache even being used" and "is it worth evicting".
 
 ## `clear` — drop everything
 
 ```bash
-wallet-helper clear [--store PATH]
+wallet-helper [--dir PATH | --sqlite FILE] clear [--yes]
 ```
 
-**Destructive and total.** Run `stats` first, tell the user how many entries
-and how much disk will go, and get a yes — especially for a store you did not
+Asks for confirmation unless `--yes`. **Destructive and total.** Run `stats`
+first, tell the user how many entries will go, and get a yes — especially for a store you did not
 create in this session.
 
 ## `evict` — prune by policy
 
 ```bash
-wallet-helper evict [--store PATH] [--max-age SECONDS] [--max-size BYTES] [--max-entries N]
+wallet-helper [--dir PATH | --sqlite FILE] evict [--older-than SECONDS] [--max-entries N]
 ```
 
 Removes the entries a policy selects and keeps the rest. Prefer it to `clear`
 whenever the goal is "reclaim space", not "start over".
 
-`max_entries` also exists as an automatic cap configured on the `Wallet`
-itself, so a long-running process prunes as it goes.
+`max_entries` also exists as an automatic cap configured on the ledger
+(`Ledger(max_entries=…)`, `SqliteLedger(path, max_entries=…)`), so a
+long-running process prunes as it goes.
 
 ## The key model
 
@@ -80,6 +86,7 @@ deadlock.
 ## Output contract
 
 - `path` prints a single path.
-- `stats` prints a human-readable summary, or JSON with `--json`.
-- `clear` / `evict` print how many entries were removed.
-- Failures are logged through `os_helper` and exit non-zero.
+- `stats` prints three human-readable lines (ledger, entries, cache hits).
+- `clear` prints `cleared <location>`; `evict` prints how many entries it
+  removed.
+- A failure prints `Error: …` on stderr and exits non-zero.
