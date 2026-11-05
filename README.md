@@ -27,7 +27,7 @@ It is content-addressed, so a renamed input file still hits and two different in
 
 ## Status
 
-Battle-tested: 131 tests, a green CI gate across four jobs, and semantic-versioned releases on PyPI (see the badges above). What ships today:
+Battle-tested: 142 tests (doctests included), a green CI gate on every push, and semantic-versioned releases on PyPI (see the badges above). What ships today:
 
 - **library** with `Wallet` and the `@memoize` decorator (sync and `async def`), over a `Ledger` (JSON files), a `SqliteLedger` (one shared file), or a `RemoteLedger` (an HTTP server). In-process single-flight is built in.
 - **cross-process single-flight** through the SQLite backend or the server. Three mechanisms keep one execution honest across machines:
@@ -74,7 +74,7 @@ pip install "wallet-helper[api]"   # HTTP dedup server     -> fastapi, uvicorn
 pip install "wallet-helper[mcp]"   # MCP tools + the above -> fastapi-mcp
 ```
 
-The `[mcp]` extra adds a second command, `wallet-helper-mcp`, serving the HTTP API and an `/mcp` endpoint from the same app.
+The `[mcp]` extra adds a second command, `wallet-helper-mcp`, serving the HTTP API and an `/mcp` endpoint from the same app, on `127.0.0.1:8012` unless `WALLET_HELPER_HOST` / `WALLET_HELPER_PORT` say otherwise.
 
 ## Quick start
 
@@ -165,6 +165,7 @@ The `wallet-helper` command inspects and manages the store (it defaults to `$WAL
 ```bash
 wallet-helper stats   # how many results are cached and how many calls they saved
 wallet-helper path    # where the store lives
+wallet-helper evict --older-than 86400 --max-entries 1000   # prune expired, old or surplus entries
 wallet-helper clear   # empty the store
 ```
 
@@ -195,18 +196,22 @@ make           # lint then test
 ```
 
 CI is deliberately a light gate: the exhaustive multi-version sweep belongs on a
-contributor's machine before the push. Four jobs run.
+contributor's machine before the push, where `.githooks/pre-push` (enabled once
+per clone with `git config core.hooksPath .githooks`) blocks the push on a
+failing `ruff check`, `ruff format --check` or `pytest`. Two jobs run on every
+push and pull request, a third once a week.
 
-- **lint** — `ruff check .` and `ruff format --check .`, with ruff pinned to a
-  known version so a new default rule cannot turn the gate red by surprise.
-- **test** — the whole suite with the `[dev,api]` extras, on one Python (3.12)
-  on Linux. The cross-process test leans on `spawn`-based multiprocessing, which
-  is minutes-slow on a Windows runner, so it is not paid for on every push.
-- **smoke** — the install procedure itself, on all three platforms you might
-  install on (🐧 Linux, 🍎 macOS, 🪟 Windows). It installs the package plus the
-  `[api]` extra, then proves it works: the package imports, `wallet-helper`
-  answers `--version` and `--help`, and a memoize round-trip runs the work
-  exactly once. This is what "verified on Windows too" means here.
+- **gate** — on one Python (3.12) on Linux, with the `[dev,api]` extras:
+  `ruff check .` and `ruff format --check .` (ruff pinned to a known version so
+  a new default rule cannot turn the gate red by surprise), the whole suite,
+  then the install smoke: `wallet-helper` answers `--version` and `--help`, and
+  `scripts/smoke_install.py` proves a memoize round-trip runs the work exactly
+  once.
+- **smoke-os** — the same install smoke on 🍎 macOS and 🪟 Windows (Python
+  3.13, `[api]` extra, plus the import and its version), every Monday and on
+  manual dispatch rather than on every push: the cross-process test leans on
+  `spawn`-based multiprocessing, minutes-slow on a Windows runner, and the
+  smoke alone is what "verified on Windows too" means here.
 - **floor** — `pip install .` then `import wallet_helper` on Python 3.10, so the
   `requires-python = ">=3.10"` promise has evidence behind it instead of being
   a claim nobody ever ran.

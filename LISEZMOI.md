@@ -31,7 +31,7 @@ C'est adressé par contenu : un fichier d'entrée renommé fait quand même mouc
 
 ## État
 
-Éprouvé en production : 131 tests, une barrière de CI (intégration continue) au vert sur quatre jobs puis des versions publiées sur PyPI selon le versionnage sémantique (voir les badges ci-dessus). Ce qui est livré aujourd'hui :
+Éprouvé en production : 142 tests (doctests compris), une barrière de CI (intégration continue) au vert à chaque push puis des versions publiées sur PyPI selon le versionnage sémantique (voir les badges ci-dessus). Ce qui est livré aujourd'hui :
 
 - **bibliothèque** avec `Wallet` et le décorateur `@memoize` (synchrone et `async def`), sur un `Ledger` (fichiers JSON), un `SqliteLedger` (un fichier partagé) ou un `RemoteLedger` (un serveur HTTP). Le single-flight en processus est intégré.
 - **single-flight entre processus** via le backend SQLite ou le serveur. Trois mécanismes garantissent une seule exécution entre machines :
@@ -78,7 +78,7 @@ pip install "wallet-helper[api]"   # serveur HTTP de dédup -> fastapi, uvicorn
 pip install "wallet-helper[mcp]"   # outils MCP + ce qui précède -> fastapi-mcp
 ```
 
-L'extra `[mcp]` ajoute une seconde commande, `wallet-helper-mcp`, qui sert l'API HTTP et un endpoint `/mcp` depuis la même app.
+L'extra `[mcp]` ajoute une seconde commande, `wallet-helper-mcp`, qui sert l'API HTTP et un endpoint `/mcp` depuis la même app, sur `127.0.0.1:8012` sauf si `WALLET_HELPER_HOST` / `WALLET_HELPER_PORT` disent autre chose.
 
 ## Prise en main rapide
 
@@ -169,6 +169,7 @@ La commande `wallet-helper` inspecte et gère le stockage (par défaut `$WALLET_
 ```bash
 wallet-helper stats   # combien de résultats en cache et combien d'appels évités
 wallet-helper path    # où vit le stockage
+wallet-helper evict --older-than 86400 --max-entries 1000   # élaguer les entrées expirées, anciennes ou en surnombre
 wallet-helper clear   # vider le stockage
 ```
 
@@ -200,21 +201,24 @@ make           # lint puis test
 
 La CI est volontairement une barrière légère : le balayage exhaustif de toutes
 les versions de Python a sa place sur la machine d'un contributeur, avant le
-push. Quatre jobs tournent.
+push, où `.githooks/pre-push` (activé une fois par clone avec
+`git config core.hooksPath .githooks`) bloque le push si `ruff check`,
+`ruff format --check` ou `pytest` échoue. Deux jobs tournent à chaque push et
+à chaque pull request, un troisième une fois par semaine.
 
-- **lint** — `ruff check .` puis `ruff format --check .`, avec un ruff épinglé à
-  une version connue, pour qu'une nouvelle règle par défaut ne fasse pas passer
-  la barrière au rouge par surprise.
-- **test** — toute la suite avec les extras `[dev,api]`, sur un seul Python
-  (3.12) sous Linux. Le test entre processus s'appuie sur le multiprocessing par
-  `spawn`, très lent sur un runner Windows : on ne le paie donc pas à chaque
-  push.
-- **smoke** — la procédure d'installation elle-même, sur les trois plateformes
-  où vous pourriez installer (🐧 Linux, 🍎 macOS, 🪟 Windows). Elle installe le
-  paquet plus l'extra `[api]`, puis prouve que ça marche : le paquet s'importe,
-  `wallet-helper` répond à `--version` et `--help` et un aller-retour de
-  mémoïsation n'exécute le travail qu'une seule fois. Voilà ce que « vérifié
-  sous Windows aussi » veut dire ici.
+- **gate** — sur un seul Python (3.12) sous Linux, avec les extras `[dev,api]` :
+  `ruff check .` puis `ruff format --check .` (un ruff épinglé à une version
+  connue, pour qu'une nouvelle règle par défaut ne fasse pas passer la barrière
+  au rouge par surprise), toute la suite, puis la fumée d'installation :
+  `wallet-helper` répond à `--version` et `--help` et
+  `scripts/smoke_install.py` prouve qu'un aller-retour de mémoïsation n'exécute
+  le travail qu'une seule fois.
+- **smoke-os** — la même fumée d'installation sous 🍎 macOS et 🪟 Windows
+  (Python 3.13, extra `[api]`, plus l'import et sa version), chaque lundi et sur
+  déclenchement manuel plutôt qu'à chaque push : le test entre processus
+  s'appuie sur le multiprocessing par `spawn`, très lent sur un runner Windows,
+  et la fumée seule suffit à dire ce que « vérifié sous Windows aussi » veut
+  dire ici.
 - **floor** — `pip install .` puis `import wallet_helper` sous Python 3.10, pour
   que la promesse `requires-python = ">=3.10"` repose sur une preuve au lieu
   d'être une affirmation que personne n'a jamais exécutée.
