@@ -1,8 +1,14 @@
-# TRIGGERS: wallet-helper
+# wallet-helper — exhaustive trigger catalogue
 
-This is the user-facing, exhaustive catalogue of what `wallet-helper` can do and
-the natural-language phrasings, commands, functions, and situations that should
-invoke it.
+The exhaustive catalogue of what `wallet-helper` does and of the natural-language
+phrasings, commands, functions and situations that should invoke it, whether you
+call it yourself or drive it as an agent skill.
+
+It lives twice, byte-identical: `TRIGGERS.md` at the repo root for people, and
+`skills/wallet-helper/references/triggers.md` for the skill. `scripts/check_triggers.py`
+fails when the two drift apart. The `description:` in `SKILL.md` is what a host
+model actually sees and is capped at 1024 characters; this file is the
+auditable superset behind it, so keep the two in sync.
 
 `wallet-helper` is **persistent, content-addressed memoization with
 single-flight**: an identical heavy call is served from a local store instead of
@@ -21,18 +27,23 @@ caching (that is `functools.lru_cache`), general-purpose storage, or queueing.
 | Shared store, cross-process single-flight | n/a | `SqliteLedger` | n/a |
 | Shared store across machines | n/a | `RemoteLedger` | the whole server |
 | Compute a content-addressed key | n/a | `make_key` | `POST /key` |
-| Take a lease on a key | n/a | (internal) | `POST /claim` |
-| Write a result under a lease | n/a | (internal) | `POST /submit` |
-| Heartbeat a long lease | n/a | (internal) | `POST /extend` |
-| Give up a lease | n/a | (internal) | `POST /release` |
-| Read a stored result | n/a | `Wallet.get` | `GET /result/{key}` |
-| Where is the store | `wallet-helper path` | `default_wallet` | n/a |
-| Entry count and hits | `wallet-helper stats` | n/a | `GET /stats` |
-| Drop everything | `wallet-helper clear` | n/a | `POST /clear` |
-| Prune by age / count | `wallet-helper evict` | n/a | `POST /evict` |
+| Take a lease on a key | n/a | `SqliteLedger.claim` / `RemoteLedger.claim` | `POST /claim` |
+| Write a result under a lease | n/a | `.submit` (same two ledgers) | `POST /submit` |
+| Heartbeat a long lease | n/a | `.extend`, or `SqliteLedger.heartbeat` | `POST /extend` |
+| Give up a lease | n/a | `.release` (same two ledgers) | `POST /release` |
+| Read a stored result | n/a | `Ledger.get` (every ledger has it) | `GET /result/{key}` |
+| The process-wide default wallet | n/a | `default_wallet` | n/a |
+| Where is the store | `wallet-helper path` | `Ledger.location` | n/a |
+| Entry count and hits | `wallet-helper stats` | `Ledger.stats` | `GET /stats` |
+| Drop everything | `wallet-helper clear` | `Ledger.clear` | `POST /clear` |
+| Prune by age / count | `wallet-helper evict` | `Ledger.evict` | `POST /evict` |
 
-Every command is also reachable through the CLI (`wallet-helper …`,
-same flags), and the HTTP server doubles as the MCP surface at `/mcp`.
+The CLI covers the four store-management rows only (`path`, `stats`, `clear`,
+`evict`, with `--dir` or `--sqlite` before the subcommand); memoizing a call is
+a library job. The HTTP routes are served by `wallet-helper-mcp` (the `[mcp]`
+extra, `127.0.0.1:8012` unless `--host` / `--port` or `WALLET_HELPER_HOST` /
+`WALLET_HELPER_PORT` say otherwise), which mounts every one of them as an MCP
+tool at `/mcp` on the same app.
 
 ## Natural-language phrasings that should fire
 
@@ -92,4 +103,4 @@ same flags), and the HTTP server doubles as the MCP surface at `/mcp`.
 - the repo's `EXAMPLES.md`: runnable recipes.
 - the repo's `LANDSCAPE.md`: how wallet-helper compares with `lru_cache`,
   `joblib.Memory`, `diskcache`, Redis, and friends.
-- `skills/wallet-helper/SKILL.md`: the same catalogue, compressed for an agent.
+- the skill's `SKILL.md`: the same catalogue, compressed for an agent.

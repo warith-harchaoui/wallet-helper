@@ -6,6 +6,24 @@ semantic versioning.
 
 ## [Unreleased]
 
+### Fixed
+
+- **`wallet-helper-mcp --help` started the server.** The entry point read its
+  bind from `WALLET_HELPER_HOST` / `WALLET_HELPER_PORT` and ignored its
+  arguments, so `--help` bound a port and never returned. It is now a click
+  command: `--help` prints the usage, `--host` / `--port` are accepted, and a
+  plain run behaves as before (same variables, same `127.0.0.1:8012` default,
+  same banner). `tests/test_every_command_answers_help.py` runs every console
+  script with `--help` under a timeout.
+- **The two trigger catalogues had drifted apart, and both named an API that
+  does not exist.** `TRIGGERS.md` and the skill's `references/triggers.md` are
+  now one text, written to both paths, and `scripts/check_triggers.py` fails
+  when they differ. The table pointed at `Wallet.get`, which `Wallet` does not
+  have (a stored result is read with the ledger's `get`), called the lease
+  methods internal although `SqliteLedger` and `RemoteLedger` expose
+  `claim` / `submit` / `extend` / `release`, and claimed every operation was
+  reachable from the CLI, which has four store-management commands.
+
 ## [1.3.3] - 2026-11-05
 
 ### Fixed
