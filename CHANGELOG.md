@@ -6,6 +6,8 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [1.3.4] - 2026-11-05
+
 ### Fixed
 
 - **`wallet-helper-mcp --help` started the server.** The entry point read its
