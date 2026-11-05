@@ -6,6 +6,29 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-11-05
+
+### Fixed
+
+- **One failed renewal ended the heartbeat for good.**
+  `SqliteLedger.heartbeat` renews the lease from a background thread, and
+  that thread let any exception from `extend` escape. A single
+  `sqlite3.OperationalError` (a `database is locked` past the busy timeout,
+  under heavy contention) killed it while the block ran on, believing its
+  lease kept alive. The lease then lapsed and a waiter started the same work:
+  the duplicate the heartbeat exists to prevent. A failed renewal is now one
+  missed beat, logged through `osh.warning`, and the next beat renews as
+  usual.
+
+### Tests
+
+- `tests/test_heartbeat.py` pins the contract `heartbeat` had no test for:
+  it moves `leased_at` forward to the wall clock at each beat, keeps a waiter
+  on `pending` past `lease_seconds`, stops when the block exits (normally or
+  by exception, without waiting out a long interval), is fenced by the token,
+  never creates or resurrects a lease, and survives a failed renewal. Each
+  test was seen red against a deliberately broken `heartbeat`.
+
 ## [1.3.2] - 2026-11-01
 
 ### Fixed

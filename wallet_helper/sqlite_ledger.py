@@ -29,6 +29,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
+import os_helper as osh
+
 from wallet_helper.ledger import _DEFAULT_DIR
 
 
@@ -431,8 +433,15 @@ class SqliteLedger:
 
         def _renew() -> None:
             # Ping until the block exits; wait() returns True only when stopped.
+            # A failed renewal (say ``database is locked`` past the busy
+            # timeout) is one missed beat, not the end of the heartbeat: left
+            # to escape, it killed this thread while the block ran on,
+            # believing its lease kept alive, until a waiter stole it.
             while not stop.wait(interval):
-                self.extend(key, token)
+                try:
+                    self.extend(key, token)
+                except Exception as exc:
+                    osh.warning(f"heartbeat for {key} missed a renewal: {exc}")
 
         thread = threading.Thread(target=_renew, daemon=True)
         thread.start()
