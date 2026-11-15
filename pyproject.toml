@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wallet-helper"
-version = "1.3.4"
+version = "1.4.0"
 description = "Never run the same heavy call twice. Persistent, content-addressed memoization for expensive calls (a paid API request, a slow model, any heavy function), with single-flight so concurrent identical calls collapse into one, across process restarts and, optionally, across processes."
 readme = "README.md"
-requires-python = ">=3.10,<3.14"
+requires-python = ">=3.10,<3.16"
 license = { text = "BSD-3-Clause" }
 authors = [
     { name = "Warith HARCHAOUI", email = "warithmetics@deraison.ai" },
@@ -23,6 +23,8 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Software Development :: Libraries",
 ]
 # One dependency: os-helper, the shared utility layer of the AI Helpers suite

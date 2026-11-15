@@ -6,6 +6,29 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-11-15
+
+### Added
+
+- **`on_repeat="refuse"`: block a repeat instead of serving it.** On
+  `Wallet.call`, `Wallet.acall`, `Wallet.paid` and `@memoize`. Within `ttl`,
+  an identical call raises the new `AlreadyPaid` (with `paid_at` and
+  `allowed_after`) and nothing runs, including a repeat that waited on a
+  concurrent caller; once `ttl` has passed, the same call runs again. For a
+  paid call that must never be paid twice within a window but is a new
+  measurement after it, for example the same prompt to the same model a
+  month later. `"serve"` stays the default. `tests/test_on_repeat.py`.
+- **`put(..., created_at=...)`: record a call made earlier.** On `Ledger` and
+  `SqliteLedger`, `ttl` then runs from that moment, not from the put, and
+  `AlreadyPaid.paid_at` reports it. For back-filling a store from a log of
+  calls already paid. `RemoteLedger` refuses it: the server stamps entries.
+
+### Changed
+
+- **Python 3.14 and 3.15 accepted.** `requires-python` was capped at `<3.14`
+  with no recorded reason; it is now `>=3.10,<3.16`, and the full test suite
+  passes on Python 3.15.0. Badges, prerequisites and classifiers follow.
+
 ## [1.3.4] - 2026-11-05
 
 ### Fixed

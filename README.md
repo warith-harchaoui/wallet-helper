@@ -2,7 +2,7 @@
 
 [🇫🇷](https://github.com/warith-harchaoui/wallet-helper/blob/main/LISEZMOI.md) · [🇬🇧](https://github.com/warith-harchaoui/wallet-helper/blob/main/README.md)
 
-[![CI](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml) [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/warith-harchaoui/wallet-helper/blob/main/LICENSE) [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.13-blue.svg)](#) [![Local-first](https://img.shields.io/badge/privacy-local--first-2f6f5e.svg)](#the-promise)
+[![CI](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml/badge.svg)](https://github.com/warith-harchaoui/wallet-helper/actions/workflows/ci.yml) [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://github.com/warith-harchaoui/wallet-helper/blob/main/LICENSE) [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.15-blue.svg)](#) [![Local-first](https://img.shields.io/badge/privacy-local--first-2f6f5e.svg)](#the-promise)
 
 ![wallet-helper Logo](https://raw.githubusercontent.com/warith-harchaoui/wallet-helper/main/assets/logo.png)
 
@@ -47,7 +47,7 @@ Battle-tested: 142 tests (doctests included), a green CI gate on every push, and
 
 ## Installation
 
-The only requirement is **Python 3.10 to 3.13**. If you need Python itself:
+The only requirement is **Python 3.10 to 3.15**. If you need Python itself:
 
 - 🍎 **macOS** ([Homebrew](https://brew.sh)): `brew install python`
 - 🐧 **Ubuntu/Debian**: `sudo apt update && sudo apt install -y python3 python3-pip`
@@ -150,6 +150,23 @@ wallet = Wallet(RemoteLedger("http://cache.internal:8000"))
 @memoize(wallet=wallet)  # every host dedups through one server
 def transcribe(path):
     return call_some_paid_api(path)
+```
+
+Block a repeat instead of serving it. A paid call that must not be paid twice within a window, yet is a new and legitimate call once the window has passed (the same prompt to the same model, re-measured a month later), takes `on_repeat="refuse"`: within `ttl` the repeat raises `AlreadyPaid` and nothing runs; after `ttl` it runs again.
+
+```python
+from wallet_helper import AlreadyPaid, memoize
+
+
+@memoize(ttl=15 * 86400, on_repeat="refuse")  # blocked for 15 days, then allowed
+def ask(model, prompt, replicate):
+    return call_paid_llm(model, prompt)
+
+
+try:
+    ask("some/model", "Is the sky blue?", replicate=1)
+except AlreadyPaid as e:
+    print(e)  # identical call already paid for (date); allowed again after (date)
 ```
 
 Async functions work the same. The result is cached, never the coroutine, and concurrent awaits coalesce:

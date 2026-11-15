@@ -52,6 +52,42 @@ import os_helper as osh
 from wallet_helper.ledger import Ledger, LedgerLike, is_fresh, make_key
 
 
+class AlreadyPaid(RuntimeError):
+    """A call refused because the identical call was already paid for.
+
+    Raised by :meth:`Wallet.call` (and everything built on it) under
+    ``on_repeat="refuse"`` when the ledger holds a fresh entry for the key:
+    instead of serving the stored result, the repeat is blocked. Once the entry
+    is older than its ``ttl``, the same call is a new one and runs again.
+
+    Attributes
+    ----------
+    namespace : str
+        The call's namespace.
+    key : str
+        The ledger key of the call.
+    paid_at : float or None
+        When the call was paid for, as a POSIX timestamp (``None`` when the
+        backend does not report it).
+    allowed_after : float or None
+        From when the same call is allowed again (``None``: never, no ttl).
+    """
+
+    def __init__(self, namespace: str, key: str, record: dict | None) -> None:
+        self.namespace = namespace
+        self.key = key
+        self.paid_at = (record or {}).get("created_at")
+        self.allowed_after = (record or {}).get("expires_at")
+        when = time.strftime("%Y-%m-%d %H:%M", time.localtime(self.paid_at)) if self.paid_at else "earlier"
+        after = time.strftime("%Y-%m-%d %H:%M", time.localtime(self.allowed_after)) if self.allowed_after else "never"
+        super().__init__(f"{namespace}: identical call already paid for ({when}); allowed again after {after}")
+
+
+def _check_on_repeat(on_repeat: str) -> None:
+    if on_repeat not in ("serve", "refuse"):
+        raise ValueError(f"on_repeat must be 'serve' or 'refuse', not {on_repeat!r}")
+
+
 def _payload_from_args(fn: Callable, args: tuple, kwargs: dict, ignore: tuple[str, ...]) -> Any:
     """Build the cache payload from a call's arguments, dropping ``ignore`` names.
 
@@ -107,6 +143,7 @@ class Wallet:
         *,
         ttl: float | None = None,
         stale_while_revalidate: bool = False,
+        on_repeat: str = "serve",
     ) -> tuple[Any, bool]:
         """Return a cached result, or run ``fn`` once and store it.
 
@@ -127,6 +164,12 @@ class Wallet:
             Only for the in-process :class:`~wallet_helper.ledger.Ledger`. When an
             entry is expired, return the stale result at once and refresh it in a
             background thread, so callers never wait on the recompute.
+        on_repeat : {"serve", "refuse"}, optional
+            What an identical call within ``ttl`` gets. ``"serve"`` (default):
+            the stored result. ``"refuse"``: :class:`AlreadyPaid` is raised and
+            nothing runs, for a call that must never be paid twice within the
+            window yet is a new, legitimate call once the window has passed
+            (for example the same prompt to the same model, a month later).
 
         Returns
         -------
@@ -134,8 +177,17 @@ class Wallet:
             The result and ``from_cache``: ``True`` when served from the ledger,
             ``False`` when this call did the real work. A raising ``fn`` stores
             nothing, so a failed call is never cached.
+
+        Raises
+        ------
+        AlreadyPaid
+            Under ``on_repeat="refuse"``, when the identical call is still fresh
+            in the ledger, or was completed by a concurrent caller meanwhile.
         """
+        _check_on_repeat(on_repeat)
         key = make_key(namespace, key_payload)
+        if on_repeat == "refuse":
+            self._refuse_if_paid(namespace, key)
         if hasattr(self.ledger, "claim"):
             # Claim-capable backend: single-flight across processes and threads.
             value, hit = self._call_via_claim(key, fn, ttl)
@@ -147,7 +199,15 @@ class Wallet:
         # paths would be worse than none at all.
         if not hit:
             self._record_miss()
+        elif on_repeat == "refuse":
+            # A concurrent caller paid for it while this one waited.
+            raise AlreadyPaid(namespace, key, self.ledger.get_record(key))
         return value, hit
+
+    def _refuse_if_paid(self, namespace: str, key: str) -> None:
+        record = self.ledger.get_record(key)
+        if record is not None and is_fresh(record):
+            raise AlreadyPaid(namespace, key, record)
 
     def _record_miss(self) -> None:
         """Count a call the cache could not serve, if the backend tracks it.
@@ -262,6 +322,7 @@ class Wallet:
         *,
         ttl: float | None = None,
         stale_while_revalidate: bool = False,
+        on_repeat: str = "serve",
     ) -> tuple[Any, bool]:
         """Async twin of :meth:`call`: await ``fn`` once and cache its result.
 
@@ -273,13 +334,18 @@ class Wallet:
         Parameters mirror :meth:`call`, except ``fn`` is a zero-argument callable
         returning an awaitable.
         """
+        _check_on_repeat(on_repeat)
         key = make_key(namespace, key_payload)
+        if on_repeat == "refuse":
+            await asyncio.to_thread(self._refuse_if_paid, namespace, key)
         if hasattr(self.ledger, "claim"):
             value, hit = await self._acall_via_claim(key, fn, ttl)
         else:
             value, hit = await self._acall_local(key, fn, ttl, stale_while_revalidate)
         if not hit:
             self._record_miss()
+        elif on_repeat == "refuse":
+            raise AlreadyPaid(namespace, key, await asyncio.to_thread(self.ledger.get_record, key))
         return value, hit
 
     async def _acall_local(
@@ -360,6 +426,7 @@ class Wallet:
         ignore: tuple[str, ...] = (),
         ttl: float | None = None,
         stale_while_revalidate: bool = False,
+        on_repeat: str = "serve",
     ) -> Callable:
         """Decorator memoizing a function through this wallet.
 
@@ -379,6 +446,9 @@ class Wallet:
         stale_while_revalidate : bool, optional
             Serve a stale result and refresh in the background (in-process Ledger
             only; see :meth:`call`).
+        on_repeat : {"serve", "refuse"}, optional
+            ``"refuse"`` raises :class:`AlreadyPaid` on an identical call within
+            ``ttl`` instead of serving it (see :meth:`call`).
 
         Returns
         -------
@@ -403,6 +473,8 @@ class Wallet:
         1
         """
 
+        _check_on_repeat(on_repeat)
+
         def decorator(fn: Callable) -> Callable:
             def payload_for(args: tuple, kwargs: dict) -> Any:
                 return key(*args, **kwargs) if key is not None else _payload_from_args(fn, args, kwargs, ignore)
@@ -418,6 +490,7 @@ class Wallet:
                         lambda: fn(*args, **kwargs),
                         ttl=ttl,
                         stale_while_revalidate=stale_while_revalidate,
+                        on_repeat=on_repeat,
                     )
                     return result
             else:
@@ -430,6 +503,7 @@ class Wallet:
                         lambda: fn(*args, **kwargs),
                         ttl=ttl,
                         stale_while_revalidate=stale_while_revalidate,
+                        on_repeat=on_repeat,
                     )
                     return result
 
@@ -469,6 +543,7 @@ def memoize(
     ignore: tuple[str, ...] = (),
     ttl: float | None = None,
     stale_while_revalidate: bool = False,
+    on_repeat: str = "serve",
     wallet: Wallet | None = None,
 ) -> Callable:
     """Persistent memoization: a cache that survives restarts, plus single-flight.
@@ -493,6 +568,10 @@ def memoize(
         Seconds the stored result stays fresh.
     stale_while_revalidate : bool, optional
         Serve a stale result and refresh in the background (in-process store only).
+    on_repeat : {"serve", "refuse"}, optional
+        ``"refuse"``: an identical call within ``ttl`` raises :class:`AlreadyPaid`
+        instead of being served, and runs again once ``ttl`` has passed
+        (``@memoize(ttl=15 * 86400, on_repeat="refuse")``).
     wallet : Wallet, optional
         The wallet to use; defaults to the shared :func:`default_wallet`.
 
@@ -517,7 +596,9 @@ def memoize(
     def make(func: Callable) -> Callable:
         ns = namespace or f"{func.__module__}.{func.__qualname__}"
         w = wallet or default_wallet()
-        return w.paid(ns, key=key, ignore=ignore, ttl=ttl, stale_while_revalidate=stale_while_revalidate)(func)
+        return w.paid(
+            ns, key=key, ignore=ignore, ttl=ttl, stale_while_revalidate=stale_while_revalidate, on_repeat=on_repeat
+        )(func)
 
     # Support both @memoize and @memoize(...): a bare call passes the function.
     return make(fn) if callable(fn) else make

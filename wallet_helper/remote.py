@@ -141,8 +141,14 @@ class RemoteLedger:
         """Return ``True`` if the server has a result stored for ``key``."""
         return self.get_record(key) is not None
 
-    def put(self, key: str, result: Any, *, ttl: float | None = None) -> None:
-        """Store ``result`` for ``key`` on the server (an alias for submit)."""
+    def put(self, key: str, result: Any, *, ttl: float | None = None, created_at: float | None = None) -> None:
+        """Store ``result`` for ``key`` on the server (an alias for submit).
+
+        The server stamps entries itself: a past ``created_at`` cannot be sent
+        over HTTP and is refused rather than silently replaced by now.
+        """
+        if created_at is not None:
+            raise ValueError("RemoteLedger cannot backdate an entry: the server stamps created_at itself")
         self.submit(key, result, ttl=ttl)
 
     def register_hit(self, key: str) -> None:

@@ -19,14 +19,15 @@ Warith HARCHAOUI, https://linkedin.com/in/warith-harchaoui
 
 from __future__ import annotations
 
-from wallet_helper.guard import Wallet, default_wallet, memoize
+from wallet_helper.guard import AlreadyPaid, Wallet, default_wallet, memoize
 from wallet_helper.ledger import Ledger, LedgerLike, make_key
 from wallet_helper.remote import RemoteLedger
 from wallet_helper.sqlite_ledger import SqliteLedger
 
-__version__ = "1.3.4"
+__version__ = "1.4.0"
 
 __all__ = [
+    "AlreadyPaid",
     "Ledger",
     "LedgerLike",
     "RemoteLedger",

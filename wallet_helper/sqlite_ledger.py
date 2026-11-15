@@ -227,13 +227,15 @@ class SqliteLedger:
         record = self.get_record(key)
         return None if record is None else record["result"]
 
-    def put(self, key: str, result: Any, *, ttl: float | None = None) -> None:
+    def put(self, key: str, result: Any, *, ttl: float | None = None, created_at: float | None = None) -> None:
         """Store ``result`` for ``key`` (overwrites, resetting the hit counter).
 
-        With ``ttl`` set, the entry expires that many seconds from now and is then
-        treated as a miss on the next :meth:`claim` and removed by :meth:`evict`.
+        With ``ttl`` set, the entry expires that many seconds after ``created_at``
+        (default: now) and is then treated as a miss on the next :meth:`claim`
+        and removed by :meth:`evict`. Set ``created_at`` to record a call made
+        earlier, so its window runs from when it really happened.
         """
-        now = time.time()
+        now = time.time() if created_at is None else float(created_at)
         expires_at = now + ttl if ttl is not None else None
         with self._session() as conn:
             conn.execute(

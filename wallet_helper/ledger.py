@@ -123,8 +123,8 @@ class LedgerLike(Protocol):
         """Return the full stored record, or ``None`` if absent."""
         ...
 
-    def put(self, key: str, result: Any, *, ttl: float | None = None) -> None:
-        """Store ``result`` for ``key`` (overwrites), expiring after ``ttl`` seconds."""
+    def put(self, key: str, result: Any, *, ttl: float | None = None, created_at: float | None = None) -> None:
+        """Store ``result`` for ``key`` (overwrites), expiring ``ttl`` seconds after ``created_at``."""
         ...
 
     def register_hit(self, key: str) -> None:
@@ -551,7 +551,7 @@ class Ledger:
         record = self.get_record(key)
         return None if record is None else record["result"]
 
-    def put(self, key: str, result: Any, *, ttl: float | None = None) -> None:
+    def put(self, key: str, result: Any, *, ttl: float | None = None, created_at: float | None = None) -> None:
         """Store ``result`` for ``key`` (overwrites any previous entry).
 
         Parameters
@@ -564,9 +564,13 @@ class Ledger:
             Seconds until the entry is considered stale. ``None`` (default) means
             it never expires. A stale entry is treated as a miss on the next call
             and is removed by :meth:`evict`.
+        created_at : float, optional
+            When the result was produced, as a POSIX timestamp; defaults to now.
+            Set it to record a call made earlier (for example one read back
+            from a log): ``ttl`` then runs from that moment, not from the put.
         """
         osh.make_directory(str(self.dir))
-        now = time.time()
+        now = time.time() if created_at is None else float(created_at)
         record = {
             "key": key,
             "result": result,
