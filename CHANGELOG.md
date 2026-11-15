@@ -6,6 +6,8 @@ semantic versioning.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-15
+
 ### Changed
 
 - **No upper bound on Python any more.** The previous release raised the cap
